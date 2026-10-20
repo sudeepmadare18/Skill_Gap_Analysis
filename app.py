@@ -77,7 +77,6 @@ def extract_skills(text):
     return found
 
 skill_counts = Counter()
-occupation_skill_counts = Counter()
 co_occurrence = Counter()
 
 for text in job_text:
@@ -85,9 +84,6 @@ for text in job_text:
 
     for skill in skills:
         skill_counts[skill] += 1
-
-    for skill in skills:
-        occupation_skill_counts[(text_col, skill)] += 1
 
     for i in range(len(skills)):
         for j in range(i + 1, len(skills)):
@@ -168,14 +164,17 @@ with t3:
             columns=["Skill 1", "Skill 2", "Jobs mentioning both"]
         ).sort_values("Jobs mentioning both", ascending=False)
 
+        co_df["Skill pair"] = co_df["Skill 1"] + " + " + co_df["Skill 2"]
+
         st.dataframe(
             co_df,
             use_container_width=True
         )
 
         st.bar_chart(
-            co_df.set_index(["Skill 1", "Skill 2"])
+            co_df.set_index("Skill pair")["Jobs mentioning both"]
         )
+
     else:
         st.info("No skill pairs were found in the uploaded job descriptions.")
 
