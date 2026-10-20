@@ -7,19 +7,36 @@ st.title("KSISU Module 3: Skill Demand and Curriculum Gap Analysis")
 uploaded = st.file_uploader("Upload Karnataka job postings CSV", type=["csv"])
 
 if uploaded is None:
-    st.info("Upload a CSV file with a column named 'description' or 'job_description'.")
+    st.info("Upload a CSV file containing job descriptions.")
     st.stop()
 
 df = pd.read_csv(uploaded)
-text_cols = [c for c in df.columns if df[c].dtype == "object"]
-if "description" in df.columns:
-    text_col = "description"
-elif "job_description" in df.columns:
-    text_col = "job_description"
-else:
-    text_col = st.selectbox("Select the job description column", text_cols)
 
-text = " ".join(df[text_col].dropna().astype(str).str.lower())
+if df.empty:
+    st.error("The uploaded CSV file is empty.")
+    st.stop()
+
+st.write("**Columns found in your CSV:**")
+st.write(list(df.columns))
+
+text_cols = [c for c in df.columns if df[c].dtype == "object"]
+
+if not text_cols:
+    st.error("No text column found. Upload a CSV with a job description column.")
+    st.stop()
+
+text_col = st.selectbox(
+    "Select the column containing job descriptions",
+    text_cols,
+    index=0
+)
+
+text = " ".join(
+    df[text_col]
+    .dropna()
+    .astype(str)
+    .str.lower()
+)
 
 skill_dict = {
     "Excel": ["excel"],
@@ -32,7 +49,7 @@ skill_dict = {
 
 records = []
 for skill, keywords in skill_dict.items():
-    count = sum(text.count(k) for k in keywords)
+    count = sum(text.count(keyword) for keyword in keywords)
     records.append({"Skill": skill, "Mentions": count})
 
 skills_df = pd.DataFrame(records).sort_values("Mentions", ascending=False)
@@ -46,26 +63,33 @@ with t1:
 
 with t2:
     st.subheader("Enter your course baseline")
+
     course = st.text_input("Course name")
     syllabus = st.text_input("Syllabus reference / URL")
-    covered = st.text_area("Skills explicitly covered (comma separated)", "Excel, SQL")
+    covered = st.text_area(
+        "Skills explicitly covered (comma separated)",
+        "Excel, SQL"
+    )
 
-    covered_skills = [x.strip().lower() for x in covered.split(",") if x.strip()]
+    covered_skills = [
+        x.strip().lower()
+        for x in covered.split(",")
+        if x.strip()
+    ]
+
     skills_df["Covered"] = skills_df["Skill"].str.lower().isin(covered_skills)
 
     total_mentions = skills_df["Mentions"].sum()
     covered_mentions = skills_df.loc[skills_df["Covered"], "Mentions"].sum()
 
-    if total_mentions > 0:
-        gap = 100 * (total_mentions - covered_mentions) / total_mentions
-    else:
-        gap = 0
+    gap = 0 if total_mentions == 0 else 100 * (total_mentions - covered_mentions) / total_mentions
 
     st.metric("Mention-weighted coverage gap", f"{gap:.1f}%")
     st.dataframe(skills_df, use_container_width=True)
 
-    missing = skills_df[~skills_df["Covered"] & (skills_df["Mentions"] > 0)]
-    st.write("**Topics to investigate for curriculum coverage:**")
-    st.write(", ".join(missing["Skill"]) if not missing.empty else "None")
+    missing = skills_df[
+        (~skills_df["Covered"]) & (skills_df["Mentions"] > 0)
+    ]
 
-st.caption("This measures curriculum coverage against job-posting mentions. It is not a worker-shortage estimate.")
+    st.write("**Topics to investigate for curriculum coverage:**")
+    st.write(", ".join(missing["Skill"]) if not missing.empty
