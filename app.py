@@ -3,7 +3,7 @@ import pandas as pd
 from collections import Counter
 
 st.set_page_config(
-    page_title="KSISU Module 3",
+    page_title="Skill Gap Analysis",
     page_icon="📊",
     layout="wide"
 )
