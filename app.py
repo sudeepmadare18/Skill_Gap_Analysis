@@ -10,7 +10,7 @@ if uploaded is None:
     st.info("Upload a CSV file containing job descriptions.")
     st.stop()
 
-df = pd.read_csv(uploaded)
+df = pd.read_csv(uploaded, dtype=str)
 
 if df.empty:
     st.error("The uploaded CSV file is empty.")
@@ -19,15 +19,9 @@ if df.empty:
 st.write("**Columns found in your CSV:**")
 st.write(list(df.columns))
 
-text_cols = [c for c in df.columns if df[c].dtype == "object"]
-
-if not text_cols:
-    st.error("No text column found. Upload a CSV with a job description column.")
-    st.stop()
-
 text_col = st.selectbox(
     "Select the column containing job descriptions",
-    text_cols,
+    df.columns,
     index=0
 )
 
