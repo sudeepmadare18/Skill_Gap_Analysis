@@ -8,7 +8,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("KSISU Module 3: Skill Demand and Curriculum Gap Analysis")
+st.title("Skill Gap Analysis: Skill Demand and Curriculum Gap Analysis")
 st.caption(
     "This tool analyses skills mentioned in uploaded Karnataka job postings and compares "
     "them with a course curriculum. It measures curriculum coverage, not worker shortage."
