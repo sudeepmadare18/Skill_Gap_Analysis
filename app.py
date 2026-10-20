@@ -29,6 +29,8 @@ SKILL_DICT = {
     "Communication": ["communication"],
 }
 
+ALL_SKILLS = list(SKILL_DICT.keys())
+
 # ---------------- File upload ----------------
 
 uploaded_file = st.file_uploader(
@@ -213,22 +215,40 @@ with t4:
     if course_name == "Custom course":
         course_name = st.text_input("Enter custom course name")
 
-    syllabus_url = st.text_input("Syllabus reference / URL")
-
-    covered_input = st.text_area(
-        "Skills explicitly covered",
-        value="Excel, SQL"
-    )
-
-    submitted = st.button(
-        "I have finished entering coverage from the referenced syllabus"
-    )
-
-    covered_skills = [
-        x.strip().lower()
-        for x in covered_input.split(",")
-        if x.strip()
+    syllabus_options = [
+        "College syllabus PDF",
+        "University syllabus website",
+        "Course curriculum document",
+        "Training institute syllabus",
+        "Custom syllabus reference"
     ]
+
+    syllabus_url = st.selectbox(
+        "Choose syllabus reference type",
+        syllabus_options
+    )
+
+    if syllabus_url == "Custom syllabus reference":
+        syllabus_url = st.text_input("Enter syllabus reference or URL")
+
+    selected_skills = st.multiselect(
+        "Choose skills explicitly covered in the course",
+        ALL_SKILLS,
+        default=["Excel", "SQL"]
+    )
+
+    st.info(
+        "**What is curriculum gap analysis?**  \n"
+        "It compares the skills demanded in the uploaded job postings with the skills "
+        "listed in your selected course baseline.  \n\n"
+        "**Coverage gap** means the share of job-posting skill mentions that are **not** "
+        "covered by the selected course skills.  \n\n"
+        "For example, if job postings mention 8 skill records and your course covers only "
+        "1 of them, the coverage gap is 87.5%.  \n\n"
+        "This is **not** a worker-shortage, placement, or employability percentage."
+    )
+
+    covered_skills = [skill.lower() for skill in selected_skills]
 
     gap_df = skills_df.copy()
     gap_df["Covered"] = gap_df["Skill"].str.lower().isin(covered_skills)
@@ -262,7 +282,7 @@ with t4:
         (~gap_df["Covered"]) & (gap_df["Mentions"] > 0)
     ]["Skill"].tolist()
 
-    st.write("**Topics to investigate for curriculum coverage:**")
+    st.subheader("Topics to investigate for curriculum coverage")
     st.write(", ".join(missing_skills) if missing_skills else "None")
 
     st.info(
@@ -284,7 +304,7 @@ with t4:
 
     st.write(
         "A record can mention several skills. This score measures mention-weighted coverage "
-        "of this sample against the entered baseline only. It is not a shortage, placement, "
+        "of this sample against the selected baseline only. It is not a shortage, placement, "
         "or employability percentage."
     )
 
