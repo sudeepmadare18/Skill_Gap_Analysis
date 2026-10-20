@@ -92,4 +92,9 @@ with t2:
     ]
 
     st.write("**Topics to investigate for curriculum coverage:**")
-    st.write(", ".join(missing["Skill"]) if not missing.empty
+    st.write(", ".join(missing["Skill"]) if not missing.empty else "None")
+
+st.caption(
+    "This app measures curriculum coverage against job-posting skill mentions. "
+    "It is not a Karnataka worker-shortage, placement, or employability estimate."
+)
