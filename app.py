@@ -188,12 +188,31 @@ with t4:
         "Job data alone cannot establish worker supply."
     )
 
-    baseline_type = st.text_input(
-        "Baseline type",
-        value="Illustrative demo baseline"
+    baseline_type = st.selectbox(
+        "Choose baseline type",
+        [
+            "Illustrative demo baseline",
+            "Actual course syllabus",
+            "Custom course baseline"
+        ]
     )
 
-    course_name = st.text_input("Course name")
+    course_options = [
+        "BCA / B.Sc. Computer Science",
+        "MCA / M.Sc. Computer Science",
+        "Data Analytics Course",
+        "Python Full Stack Course",
+        "Custom course"
+    ]
+
+    course_name = st.selectbox(
+        "Choose course",
+        course_options
+    )
+
+    if course_name == "Custom course":
+        course_name = st.text_input("Enter custom course name")
+
     syllabus_url = st.text_input("Syllabus reference / URL")
 
     covered_input = st.text_area(
