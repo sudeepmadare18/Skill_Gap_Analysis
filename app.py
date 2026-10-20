@@ -3,12 +3,12 @@ import pandas as pd
 from collections import Counter
 
 st.set_page_config(
-    page_title="Skill Gap Analysis",
+    page_title="KSISU Module 3",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("Skill Gap Analysis: Skill Demand and Curriculum Gap Analysis")
+st.title("KSISU Module 3: Skill Demand and Curriculum Gap Analysis")
 st.caption(
     "This tool analyses skills mentioned in uploaded Karnataka job postings and compares "
     "them with a course curriculum. It measures curriculum coverage, not worker shortage."
