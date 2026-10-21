@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, interviews, district dashboard, and AI career guidance.")
+st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, interviews, sector analytics, district dashboard, and AI career guidance.")
 
 # ---------------- Database ----------------
 
@@ -56,6 +56,11 @@ def init_db():
             degree TEXT,
             district TEXT
         )
+    """)
+
+    cur.execute("""
+        ALTER TABLE jobs
+        ADD COLUMN IF NOT EXISTS sector TEXT
     """)
 
     cur.execute("""
@@ -137,7 +142,7 @@ def init_db():
 
 init_db()
 
-# ---------------- Skills ----------------
+# ---------------- Skills and lists ----------------
 
 SKILL_DICT = {
     "Excel": ["excel"],
@@ -189,6 +194,18 @@ DISTRICTS = [
     "Koppal", "Mandya", "Mysuru", "Raichur", "Ramanagara",
     "Shivamogga", "Tumakuru", "Udupi", "Uttara Kannada", "Vijayapura",
     "Yadgir"
+]
+
+SECTORS = [
+    "IT / Software",
+    "Data and Analytics",
+    "Banking / Finance",
+    "Manufacturing",
+    "Healthcare",
+    "Retail",
+    "Government / Public Sector",
+    "Education",
+    "Other"
 ]
 
 ENGINEERING = [
@@ -311,14 +328,15 @@ def get_students():
     return students
 
 
-def save_job(company, title, description, skills, degree, district):
+def save_job(company, title, description, skills, degree, district, sector):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO jobs (company, title, description, skills, degree, district)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (company, title, description, json.dumps(skills), degree, district))
+        INSERT INTO jobs
+        (company, title, description, skills, degree, district, sector)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, (company, title, description, json.dumps(skills), degree, district, sector))
 
     conn.commit()
     cur.close()
@@ -342,7 +360,8 @@ def get_jobs():
             "Description": row["description"],
             "Skills": json.loads(row["skills"]),
             "Degree": row["degree"],
-            "District": row["district"]
+            "District": row["district"],
+            "Sector": row["sector"] or "Other"
         })
 
     return jobs
@@ -884,6 +903,9 @@ def student_page():
             with st.expander(
                 f"{job['Title']} — {job['Company']} | Match: {score}%"
             ):
+                st.write("**Sector:**")
+                st.write(job["Sector"])
+
                 st.write("**Required skills:**")
                 st.write(", ".join(job["Skills"]))
 
@@ -963,6 +985,8 @@ def company_page():
 
         district = st.selectbox("Job district", DISTRICTS)
 
+        sector = st.selectbox("Job sector", SECTORS)
+
         if st.button("Save job"):
             if job_title and job_skills:
                 save_job(
@@ -971,7 +995,8 @@ def company_page():
                     job_description,
                     job_skills,
                     degree,
-                    district
+                    district,
+                    sector
                 )
                 st.success("Job saved permanently.")
             else:
@@ -988,6 +1013,7 @@ def company_page():
                 rows.append({
                     "Company": job["Company"],
                     "Job": job["Title"],
+                    "Sector": job["Sector"],
                     "District": job["District"],
                     "Skills": ", ".join(job["Skills"])
                 })
@@ -1465,7 +1491,7 @@ def notifications_page():
     else:
         st.info("No notifications yet.")
 
-# ---------------- Dashboard ----------------
+# ---------------- District dashboard ----------------
 
 def admin_page():
     st.title("🏛️ District and State Skill Dashboard")
@@ -1671,6 +1697,156 @@ def admin_page():
     else:
         st.info("No job-fair registrations yet.")
 
+# ---------------- Sector analytics ----------------
+
+def sector_analytics_page():
+    st.title("📊 Sector and Employment Analytics")
+
+    jobs = get_jobs()
+    students = get_students()
+    applications = get_job_applications()
+
+    if not jobs:
+        st.warning("No jobs available. Add jobs first.")
+        st.stop()
+
+    st.subheader("Sector-wise job demand")
+
+    sector_jobs = {}
+
+    for job in jobs:
+        sector = job["Sector"]
+        sector_jobs[sector] = sector_jobs.get(sector, 0) + 1
+
+    sector_jobs_df = pd.DataFrame(
+        sorted(sector_jobs.items(), key=lambda x: x[1], reverse=True),
+        columns=["Sector", "Jobs"]
+    )
+
+    st.bar_chart(sector_jobs_df.set_index("Sector"))
+    st.dataframe(sector_jobs_df, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("Sector-wise applications")
+
+    job_sector_map = {
+        job["Title"]: job["Sector"]
+        for job in jobs
+    }
+
+    sector_applications = {}
+
+    for application in applications:
+        sector = job_sector_map.get(application["Job"], "Other")
+        sector_applications[sector] = sector_applications.get(sector, 0) + 1
+
+    if sector_applications:
+        sector_app_df = pd.DataFrame(
+            sorted(sector_applications.items(), key=lambda x: x[1], reverse=True),
+            columns=["Sector", "Applications"]
+        )
+
+        st.bar_chart(sector_app_df.set_index("Sector"))
+        st.dataframe(sector_app_df, use_container_width=True)
+    else:
+        st.info("No job applications yet.")
+
+    st.divider()
+
+    st.subheader("District-wise employment demand")
+
+    district_jobs = {}
+
+    for job in jobs:
+        district = job["District"]
+        district_jobs[district] = district_jobs.get(district, 0) + 1
+
+    district_jobs_df = pd.DataFrame(
+        sorted(district_jobs.items(), key=lambda x: x[1], reverse=True),
+        columns=["District", "Jobs"]
+    )
+
+    st.bar_chart(district_jobs_df.set_index("District"))
+    st.dataframe(district_jobs_df, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("Sector-wise skill demand")
+
+    selected_sector = st.selectbox(
+        "Select sector",
+        sorted(sector_jobs.keys())
+    )
+
+    sector_job_list = [
+        job for job in jobs
+        if job["Sector"] == selected_sector
+    ]
+
+    sector_skills = {}
+
+    for job in sector_job_list:
+        for skill in job["Skills"]:
+            sector_skills[skill] = sector_skills.get(skill, 0) + 1
+
+    if sector_skills:
+        sector_skill_df = pd.DataFrame(
+            sorted(sector_skills.items(), key=lambda x: x[1], reverse=True),
+            columns=["Skill", "Number of jobs"]
+        )
+
+        st.bar_chart(sector_skill_df.set_index("Skill"))
+        st.dataframe(sector_skill_df, use_container_width=True)
+    else:
+        st.info("No skills found for this sector.")
+
+    st.divider()
+
+    st.subheader("Sector skill gap")
+
+    student_skills = set()
+
+    for student in students:
+        student_skills.update(student["Skills"])
+
+    required_skills = set()
+
+    for job in sector_job_list:
+        required_skills.update(job["Skills"])
+
+    missing_skills = sorted(required_skills - student_skills)
+
+    if missing_skills:
+        st.warning(f"Skills missing among students for {selected_sector}:")
+
+        gap_rows = []
+
+        for skill in missing_skills:
+            gap_rows.append({
+                "Missing skill": skill,
+                "Recommended training": TRAINING.get(
+                    skill,
+                    "Skill-specific training"
+                )
+            })
+
+        gap_df = pd.DataFrame(gap_rows)
+
+        st.dataframe(gap_df, use_container_width=True)
+
+        csv = gap_df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            "Download sector skill-gap report",
+            csv,
+            "sector_skill_gap_report.csv",
+            "text/csv"
+        )
+
+    else:
+        st.success(f"No major skill gap found for {selected_sector}.")
+
 # ---------------- AI Copilot ----------------
 
 def copilot_page():
@@ -1771,6 +1947,7 @@ def main():
             "🎓 Training Programs",
             "🔔 Notifications",
             "🏛️ District Dashboard",
+            "📊 Sector Analytics",
             "🤖 AI Career Guidance"
         ]
 
@@ -1802,6 +1979,9 @@ def main():
 
     elif page == "🏛️ District Dashboard":
         admin_page()
+
+    elif page == "📊 Sector Analytics":
+        sector_analytics_page()
 
     elif page == "🤖 AI Career Guidance":
         copilot_page()
