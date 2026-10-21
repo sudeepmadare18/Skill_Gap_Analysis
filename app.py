@@ -206,12 +206,12 @@ def upload_csv():
             return None
 
         if kind == "Students":
-            n = col(df, ["name","student_name","student","full_name"])
+            n = col(df, ["name","student_name","student","full_name","username"])
             d = col(df, ["district","location","city"])
             q = col(df, ["qualification","education","degree"])
             s = col(df, ["skills","skill","skills_taught","skill_set"])
             if not all([n, d, q, s]):
-                st.sidebar.error(f"CSV must have: name, district, qualification, skills. Found: {list(df.columns)}")
+                st.sidebar.error(f"CSV must have: name/username, district, qualification/degree, skills. Found: {list(df.columns)}")
                 return
             rows = [(r[n], r[d], r[q], r[s]) for _, r in df.iterrows()]
             insert_many("INSERT INTO students (name, district, qualification, skills) VALUES %s", rows)
