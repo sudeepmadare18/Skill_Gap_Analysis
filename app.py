@@ -3,6 +3,7 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 import json
+from datetime import date
 from pypdf import PdfReader
 from docx import Document as DocxDocument
 
@@ -13,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-st.caption("Student CV, company jobs, skill-gap matching, job fair, district dashboard, and AI career guidance.")
+st.caption("Students, companies, training institutes, job fairs, district analytics, and career guidance.")
 
 # ---------------- Database ----------------
 
@@ -36,7 +37,8 @@ def init_db():
             district TEXT,
             github TEXT,
             linkedin TEXT,
-            skills TEXT
+            skills TEXT,
+            trust_score INTEGER DEFAULT 0
         )
     """)
 
@@ -66,7 +68,52 @@ def init_db():
             id SERIAL PRIMARY KEY,
             fair TEXT,
             student TEXT,
-            skills TEXT
+            skills TEXT,
+            applied_by TEXT DEFAULT 'Admin'
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS job_applications (
+            id SERIAL PRIMARY KEY,
+            job_title TEXT,
+            company TEXT,
+            student TEXT,
+            student_skills TEXT,
+            match_score NUMERIC,
+            status TEXT DEFAULT 'Applied',
+            interview_date TEXT,
+            feedback TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS training_programs (
+            id SERIAL PRIMARY KEY,
+            institute TEXT,
+            program_name TEXT,
+            skills TEXT,
+            district TEXT,
+            duration TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS training_interest (
+            id SERIAL PRIMARY KEY,
+            program_name TEXT,
+            institute TEXT,
+            student TEXT,
+            student_district TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            student TEXT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -143,6 +190,18 @@ ENGINEERING = [
     "Other Engineering Branch"
 ]
 
+SAMPLE_SECTOR_DEMAND = pd.DataFrame({
+    "Sector": ["IT Services", "BFSI", "Healthcare", "Manufacturing", "E-commerce"],
+    "Jobs 2025": [4200, 2600, 1800, 2200, 1900],
+    "Jobs 2026": [5100, 3100, 2100, 2350, 2600]
+})
+
+SAMPLE_DISTRICT_EMPLOYMENT = pd.DataFrame({
+    "District": ["Bengaluru Urban", "Mysuru", "Belagavi", "Kalaburagi", "Dakshina Kannada"],
+    "Employed": [72000, 31000, 28000, 19000, 24000],
+    "Unemployed": [12000, 7000, 6500, 6000, 5200]
+})
+
 # ---------------- File reading ----------------
 
 def read_pdf(file):
@@ -185,23 +244,42 @@ def match_skills(student_skills, job_skills):
 
     return matched, missing, score
 
+
+def calculate_trust_score(github, linkedin, skills, cv_uploaded):
+    score = 0
+
+    if github and github.startswith("https://github.com/"):
+        score += 30
+
+    if linkedin and linkedin.startswith("https://linkedin.com/in/"):
+        score += 30
+
+    if len(skills) >= 3:
+        score += 20
+
+    if cv_uploaded:
+        score += 20
+
+    return score
+
 # ---------------- DB functions ----------------
 
-def save_student(username, degree, district, github, linkedin, skills):
+def save_student(username, degree, district, github, linkedin, skills, trust_score):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO students (username, degree, district, github, linkedin, skills)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO students (username, degree, district, github, linkedin, skills, trust_score)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (username)
         DO UPDATE SET
             degree = EXCLUDED.degree,
             district = EXCLUDED.district,
             github = EXCLUDED.github,
             linkedin = EXCLUDED.linkedin,
-            skills = EXCLUDED.skills
-    """, (username, degree, district, github, linkedin, json.dumps(skills)))
+            skills = EXCLUDED.skills,
+            trust_score = EXCLUDED.trust_score
+    """, (username, degree, district, github, linkedin, json.dumps(skills), trust_score))
 
     conn.commit()
     cur.close()
@@ -225,7 +303,8 @@ def get_students():
             "District": row["district"],
             "GitHub": row["github"],
             "LinkedIn": row["linkedin"],
-            "Skills": json.loads(row["skills"])
+            "Skills": json.loads(row["skills"]),
+            "Trust score": row["trust_score"]
         })
 
     return students
@@ -257,6 +336,7 @@ def get_jobs():
 
     for row in rows:
         jobs.append({
+            "ID": row["id"],
             "Company": row["company"],
             "Title": row["title"],
             "Description": row["description"],
@@ -268,14 +348,14 @@ def get_jobs():
     return jobs
 
 
-def save_job_fair(name, district, date):
+def save_job_fair(name, district, fair_date):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         INSERT INTO job_fairs (name, district, date)
         VALUES (%s, %s, %s)
-    """, (name, district, date))
+    """, (name, district, fair_date))
 
     conn.commit()
     cur.close()
@@ -311,21 +391,26 @@ def delete_job_fair(name):
     conn.close()
 
 
-def save_registration(fair, student, skills):
+def save_fair_registration(fair, student, skills, applied_by):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO fair_registrations (fair, student, skills)
-        VALUES (%s, %s, %s)
-    """, (fair, student, skills))
+        INSERT INTO fair_registrations (fair, student, skills, applied_by)
+        VALUES (%s, %s, %s, %s)
+    """, (fair, student, skills, applied_by))
+
+    cur.execute("""
+        INSERT INTO notifications (student, message)
+        VALUES (%s, %s)
+    """, (student, f"You registered for job fair: {fair}"))
 
     conn.commit()
     cur.close()
     conn.close()
 
 
-def get_registrations():
+def get_fair_registrations():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM fair_registrations ORDER BY id DESC")
@@ -337,13 +422,14 @@ def get_registrations():
         {
             "Fair": row["fair"],
             "Student": row["student"],
-            "Skills": row["skills"]
+            "Skills": row["skills"],
+            "Applied by": row["applied_by"]
         }
         for row in rows
     ]
 
 
-def delete_registration(fair, student):
+def delete_fair_registration(fair, student):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -357,15 +443,211 @@ def delete_registration(fair, student):
     conn.close()
 
 
-def clear_registrations():
+def apply_to_job(job_title, company, student, student_skills, score):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("DELETE FROM fair_registrations")
+    cur.execute("""
+        SELECT id FROM job_applications
+        WHERE job_title = %s AND company = %s AND student = %s
+    """, (job_title, company, student))
+
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return False
+
+    cur.execute("""
+        INSERT INTO job_applications
+        (job_title, company, student, student_skills, match_score, status)
+        VALUES (%s, %s, %s, %s, %s, 'Applied')
+    """, (job_title, company, student, ", ".join(student_skills), score))
+
+    cur.execute("""
+        INSERT INTO notifications (student, message)
+        VALUES (%s, %s)
+    """, (student, f"You applied for {job_title} at {company}."))
 
     conn.commit()
     cur.close()
     conn.close()
+    return True
+
+
+def get_job_applications(company=None, student=None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if company:
+        cur.execute(
+            "SELECT * FROM job_applications WHERE company = %s ORDER BY id DESC",
+            (company,)
+        )
+    elif student:
+        cur.execute(
+            "SELECT * FROM job_applications WHERE student = %s ORDER BY id DESC",
+            (student,)
+        )
+    else:
+        cur.execute("SELECT * FROM job_applications ORDER BY id DESC")
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "ID": row["id"],
+            "Job": row["job_title"],
+            "Company": row["company"],
+            "Student": row["student"],
+            "Skills": row["student_skills"],
+            "Match score": row["match_score"],
+            "Status": row["status"],
+            "Interview date": row["interview_date"],
+            "Feedback": row["feedback"]
+        }
+        for row in rows
+    ]
+
+
+def update_application_status(app_id, status, interview_date=None, feedback=None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE job_applications
+        SET status = %s,
+            interview_date = %s,
+            feedback = %s
+        WHERE id = %s
+    """, (status, interview_date, feedback, app_id))
+
+    cur.execute(
+        "SELECT student, job_title FROM job_applications WHERE id = %s",
+        (app_id,)
+    )
+
+    row = cur.fetchone()
+
+    if row:
+        message = f"Your application for {row['job_title']} is now: {status}"
+
+        if interview_date:
+            message += f" | Interview date: {interview_date}"
+
+        cur.execute("""
+            INSERT INTO notifications (student, message)
+            VALUES (%s, %s)
+        """, (row["student"], message))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def save_training_program(institute, program_name, skills, district, duration):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO training_programs (institute, program_name, skills, district, duration)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (institute, program_name, json.dumps(skills), district, duration))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_training_programs():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM training_programs ORDER BY id DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "ID": row["id"],
+            "Institute": row["institute"],
+            "Program": row["program_name"],
+            "Skills": json.loads(row["skills"]),
+            "District": row["district"],
+            "Duration": row["duration"]
+        }
+        for row in rows
+    ]
+
+
+def save_training_interest(program_name, institute, student, student_district):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id FROM training_interest
+        WHERE program_name = %s AND student = %s
+    """, (program_name, student))
+
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return False
+
+    cur.execute("""
+        INSERT INTO training_interest (program_name, institute, student, student_district)
+        VALUES (%s, %s, %s, %s)
+    """, (program_name, institute, student, student_district))
+
+    cur.execute("""
+        INSERT INTO notifications (student, message)
+        VALUES (%s, %s)
+    """, (student, f"You expressed interest in training: {program_name}"))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return True
+
+
+def get_training_interest():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM training_interest ORDER BY id DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "Program": row["program_name"],
+            "Institute": row["institute"],
+            "Student": row["student"],
+            "District": row["student_district"]
+        }
+        for row in rows
+    ]
+
+
+def get_notifications(student):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM notifications WHERE student = %s ORDER BY id DESC",
+        (student,)
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "Message": row["message"],
+            "Time": row["created_at"]
+        }
+        for row in rows
+    ]
 
 # ---------------- Session ----------------
 
@@ -413,10 +695,10 @@ def login_page():
 def student_page():
     st.title("👤 Student Dashboard")
 
-    saved_students = get_students()
+    students = get_students()
     saved_profile = None
 
-    for student in saved_students:
+    for student in students:
         if student["Name"] == st.session_state.username:
             saved_profile = student
             break
@@ -424,11 +706,12 @@ def student_page():
     if saved_profile:
         st.subheader("My saved profile")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         col1.metric("Degree", saved_profile["Degree"])
         col2.metric("District", saved_profile["District"])
         col3.metric("Skills", len(saved_profile["Skills"]))
+        col4.metric("CV trust score", f"{saved_profile['Trust score']}%")
 
         st.write("**Saved skills:**")
         st.write(", ".join(saved_profile["Skills"]))
@@ -455,9 +738,11 @@ def student_page():
     cv = st.file_uploader("Upload CV", type=["pdf", "docx", "txt"])
 
     cv_text = ""
+    cv_uploaded = False
 
     if cv is not None:
         name = cv.name.lower()
+        cv_uploaded = True
 
         try:
             if name.endswith(".pdf"):
@@ -485,6 +770,15 @@ def student_page():
         default=detected
     )
 
+    trust_score = calculate_trust_score(
+        github,
+        linkedin,
+        skills,
+        cv_uploaded
+    )
+
+    st.info(f"CV trust score: {trust_score}%")
+
     if st.button("Save my profile"):
         if skills:
             save_student(
@@ -493,75 +787,163 @@ def student_page():
                 district,
                 github,
                 linkedin,
-                skills
+                skills,
+                trust_score
             )
             st.success("Profile saved permanently.")
         else:
             st.error("Select at least one skill.")
 
-    st.subheader("My skills")
-    st.write(", ".join(skills) if skills else "None")
+    st.subheader("Matching jobs")
+
+    jobs = get_jobs()
+
+    if jobs:
+        for job in jobs:
+            matched, missing, score = match_skills(
+                skills,
+                job["Skills"]
+            )
+
+            with st.expander(
+                f"{job['Title']} — {job['Company']} | Match: {score}%"
+            ):
+                st.write("**Required skills:**")
+                st.write(", ".join(job["Skills"]))
+
+                st.write("**Matched skills:**")
+                st.write(", ".join(matched) if matched else "None")
+
+                st.write("**Missing skills:**")
+                st.write(", ".join(missing) if missing else "None")
+
+                if st.button("Apply", key=f"apply_{job['ID']}"):
+                    applied = apply_to_job(
+                        job["Title"],
+                        job["Company"],
+                        st.session_state.username,
+                        skills,
+                        score
+                    )
+
+                    if applied:
+                        st.success("Application submitted.")
+                    else:
+                        st.warning("You already applied for this job.")
+
+    else:
+        st.info("No jobs available.")
 
 # ---------------- Company ----------------
 
 def company_page():
     st.title("🏢 Company Dashboard")
 
-    st.subheader("Post a job")
+    tab1, tab2, tab3 = st.tabs([
+        "Post job",
+        "Applicants",
+        "Interview and feedback"
+    ])
 
-    job_title = st.text_input("Job title")
-    job_description = st.text_area("Job description")
+    with tab1:
+        st.subheader("Post a job")
 
-    detected = extract_skills(job_description)
+        job_title = st.text_input("Job title")
+        job_description = st.text_area("Job description")
 
-    job_skills = st.multiselect(
-        "Required job skills",
-        ALL_SKILLS,
-        default=detected
-    )
+        detected = extract_skills(job_description)
 
-    degree = st.selectbox(
-        "Required qualification",
-        [
-            "Any qualification", "Engineering", "BCA", "B.Sc.", "B.Com",
-            "BA", "MCA", "M.Sc.", "MBA", "Diploma", "ITI"
-        ]
-    )
+        job_skills = st.multiselect(
+            "Required job skills",
+            ALL_SKILLS,
+            default=detected
+        )
 
-    district = st.selectbox("Job district", DISTRICTS)
+        degree = st.selectbox(
+            "Required qualification",
+            [
+                "Any qualification", "Engineering", "BCA", "B.Sc.", "B.Com",
+                "BA", "MCA", "M.Sc.", "MBA", "Diploma", "ITI"
+            ]
+        )
 
-    if st.button("Save job"):
-        if job_title and job_skills:
-            save_job(
-                st.session_state.username,
-                job_title,
-                job_description,
-                job_skills,
-                degree,
-                district
+        district = st.selectbox("Job district", DISTRICTS)
+
+        if st.button("Save job"):
+            if job_title and job_skills:
+                save_job(
+                    st.session_state.username,
+                    job_title,
+                    job_description,
+                    job_skills,
+                    degree,
+                    district
+                )
+                st.success("Job saved permanently.")
+            else:
+                st.error("Enter job title and select skills.")
+
+    with tab2:
+        st.subheader("Job applicants")
+
+        applications = get_job_applications(
+            company=st.session_state.username
+        )
+
+        if applications:
+            df = pd.DataFrame(applications).sort_values(
+                "Match score",
+                ascending=False
             )
-            st.success("Job saved permanently.")
+
+            st.dataframe(df, use_container_width=True)
         else:
-            st.error("Enter job title and select skills.")
+            st.info("No applications yet.")
 
-    st.subheader("All jobs")
+    with tab3:
+        st.subheader("Schedule interview and give feedback")
 
-    jobs = get_jobs()
+        applications = get_job_applications(
+            company=st.session_state.username
+        )
 
-    if jobs:
-        rows = []
+        if not applications:
+            st.info("No applications yet.")
+            st.stop()
 
-        for job in jobs:
-            rows.append({
-                "Company": job["Company"],
-                "Job": job["Title"],
-                "District": job["District"],
-                "Skills": ", ".join(job["Skills"])
-            })
+        app_options = [
+            f"{a['Student']} — {a['Job']} ({a['Status']})"
+            for a in applications
+        ]
 
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    else:
-        st.info("No jobs posted yet.")
+        selected = st.selectbox("Select application", app_options)
+
+        application = applications[app_options.index(selected)]
+
+        new_status = st.selectbox(
+            "Update status",
+            [
+                application["Status"],
+                "Shortlisted",
+                "Interview Scheduled",
+                "Selected",
+                "Rejected"
+            ]
+        )
+
+        interview_date = st.date_input("Interview date")
+
+        feedback = st.text_area("Feedback")
+
+        if st.button("Update application"):
+            update_application_status(
+                application["ID"],
+                new_status,
+                str(interview_date) if new_status == "Interview Scheduled" else None,
+                feedback
+            )
+
+            st.success("Application updated and student notified.")
 
 # ---------------- Matching ----------------
 
@@ -603,6 +985,7 @@ def matching_page():
             "Student": student["Name"],
             "Degree": student["Degree"],
             "District": student["District"],
+            "Trust score": student["Trust score"],
             "Match score": score,
             "Matched skills": ", ".join(matched) if matched else "None",
             "Missing skills": ", ".join(missing) if missing else "None"
@@ -622,50 +1005,6 @@ def matching_page():
         "text/csv"
     )
 
-    st.subheader("Detailed skill-gap report")
-
-    student_names = [student["Name"] for student in students]
-
-    selected_student = st.selectbox("Choose student", student_names)
-
-    student = next(
-        s for s in students
-        if s["Name"] == selected_student
-    )
-
-    matched, missing, score = match_skills(
-        student["Skills"],
-        job["Skills"]
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Match score", f"{score}%")
-    col2.metric("Matched skills", len(matched))
-    col3.metric("Missing skills", len(missing))
-
-    st.subheader("Matched skills")
-    st.write(", ".join(matched) if matched else "None")
-
-    st.subheader("Missing skills / Skill gap")
-    st.write(", ".join(missing) if missing else "No skill gap.")
-
-    st.subheader("Recommended training")
-
-    if missing:
-        rows = []
-
-        for skill in missing:
-            rows.append({
-                "Missing skill": skill,
-                "Recommended training": TRAINING.get(
-                    skill,
-                    "Skill-specific training"
-                )
-            })
-
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
 # ---------------- Job fair ----------------
 
 def job_fair_page():
@@ -673,7 +1012,7 @@ def job_fair_page():
 
     tab1, tab2, tab3 = st.tabs([
         "Create job fair",
-        "Student registration",
+        "Student applications",
         "Participants"
     ])
 
@@ -711,74 +1050,129 @@ def job_fair_page():
             st.info("No job fairs yet.")
 
     with tab2:
-        fairs = get_job_fairs()
+        st.subheader("Student job-fair applications")
 
-        if not fairs:
-            st.warning("No job fairs available.")
-            st.stop()
+        registrations = get_fair_registrations()
 
-        fair_options = [
-            f"{fair['Name']} — {fair['District']} ({fair['Date']})"
-            for fair in fairs
+        student_apps = [
+            r for r in registrations
+            if r["Applied by"] == "Student"
         ]
 
-        selected_fair = st.selectbox("Choose job fair", fair_options)
-
-        student_name = st.text_input("Student name")
-
-        if st.button("Register"):
-            if student_name:
-                skills = "No skills added"
-
-                for student in get_students():
-                    if student["Name"] == student_name:
-                        skills = ", ".join(student["Skills"])
-                        break
-
-                save_registration(
-                    selected_fair,
-                    student_name,
-                    skills
-                )
-
-                st.success("Student registered permanently.")
-            else:
-                st.error("Enter student name.")
+        if student_apps:
+            st.dataframe(pd.DataFrame(student_apps), use_container_width=True)
+        else:
+            st.info("No student applications yet.")
 
     with tab3:
-        st.subheader("Registered students")
+        st.subheader("All participants")
 
-        registrations = get_registrations()
+        registrations = get_fair_registrations()
 
         if registrations:
             for registration in registrations:
                 col1, col2, col3 = st.columns([3, 3, 1])
 
                 col1.write(f"**{registration['Student']}**")
-                col2.write(registration["Skills"])
+                col2.write(
+                    f"{registration['Fair']} | {registration['Applied by']}"
+                )
 
                 if col3.button(
                     "Delete",
                     key=f"delete_reg_{registration['Fair']}_{registration['Student']}"
                 ):
-                    delete_registration(
+                    delete_fair_registration(
                         registration["Fair"],
                         registration["Student"]
                     )
                     st.rerun()
 
-            st.subheader("Registration table")
             st.dataframe(
                 pd.DataFrame(registrations),
                 use_container_width=True
             )
-
-            if st.button("Clear all registrations"):
-                clear_registrations()
-                st.rerun()
-
         else:
             st.info("No registrations yet.")
+
+# ---------------- Training Institute ----------------
+
+def training_page():
+    st.title("🎓 Training Institute Dashboard")
+
+    tab1, tab2 = st.tabs([
+        "Publish training program",
+        "Student interest"
+    ])
+
+    with tab1:
+        st.subheader("Publish training program")
+
+        program_name = st.text_input("Training program name")
+
+        program_skills = st.multiselect(
+            "Skills covered",
+            ALL_SKILLS
+        )
+
+        district = st.selectbox("District", DISTRICTS)
+
+        duration = st.text_input("Duration", value="3 months")
+
+        if st.button("Publish program"):
+            if program_name and program_skills:
+                save_training_program(
+                    st.session_state.username,
+                    program_name,
+                    program_skills,
+                    district,
+                    duration
+                )
+                st.success("Training program published.")
+            else:
+                st.error("Enter program name and select skills.")
+
+        st.subheader("My programs")
+
+        programs = get_training_programs()
+
+        my_programs = [
+            p for p in programs
+            if p["Institute"] == st.session_state.username
+        ]
+
+        if my_programs:
+            st.dataframe(pd.DataFrame(my_programs), use_container_width=True)
+        else:
+            st.info("No programs published yet.")
+
+    with tab2:
+        st.subheader("Students interested in programs")
+
+        interest = get_training_interest()
+
+        my_interest = [
+            i for i in interest
+            if i["Institute"] == st.session_state.username
+        ]
+
+        if my_interest:
+            st.dataframe(pd.DataFrame(my_interest), use_container_width=True)
+        else:
+            st.info("No student interest yet.")
+
+# ---------------- Notifications ----------------
+
+def notifications_page():
+    st.title("🔔 Notifications")
+
+    notifications = get_notifications(st.session_state.username)
+
+    if notifications:
+        for notification in notifications:
+            st.info(f"{notification['Message']} — {notification['Time']}")
+    else:
+        st.info("No notifications yet.")
 
 # ---------------- Dashboard ----------------
 
@@ -788,49 +1182,46 @@ def admin_page():
     students = get_students()
     jobs = get_jobs()
     fairs = get_job_fairs()
-    registrations = get_registrations()
+    registrations = get_fair_registrations()
+    applications = get_job_applications()
+    programs = get_training_programs()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    col1.metric("Total students", len(students))
-    col2.metric("Total jobs", len(jobs))
+    col1.metric("Students", len(students))
+    col2.metric("Jobs", len(jobs))
     col3.metric("Job fairs", len(fairs))
-    col4.metric("Fair registrations", len(registrations))
+    col4.metric("Applications", len(applications))
+    col5.metric("Training programs", len(programs))
 
     st.divider()
 
-    all_districts = sorted(
-        list(set(
-            [student["District"] for student in students] +
-            [job["District"] for job in jobs]
-        ))
+    st.subheader("Sector and skill demand trend")
+
+    sector_df = SAMPLE_SECTOR_DEMAND.copy()
+    sector_df["Growth %"] = (
+        (sector_df["Jobs 2026"] - sector_df["Jobs 2025"])
+        / sector_df["Jobs 2025"] * 100
+    ).round(1)
+
+    st.bar_chart(sector_df.set_index("Sector")[["Jobs 2025", "Jobs 2026"]])
+    st.dataframe(sector_df, use_container_width=True)
+
+    st.caption("Sample demonstration data. Replace with verified government or job-market data for production use.")
+
+    st.divider()
+
+    st.subheader("District employment snapshot")
+
+    st.bar_chart(
+        SAMPLE_DISTRICT_EMPLOYMENT.set_index("District")[
+            ["Employed", "Unemployed"]
+        ]
     )
 
-    selected_district = st.selectbox(
-        "Select district",
-        ["All Karnataka"] + all_districts
-    )
+    st.dataframe(SAMPLE_DISTRICT_EMPLOYMENT, use_container_width=True)
 
-    if selected_district == "All Karnataka":
-        filtered_students = students
-        filtered_jobs = jobs
-    else:
-        filtered_students = [
-            student for student in students
-            if student["District"] == selected_district
-        ]
-
-        filtered_jobs = [
-            job for job in jobs
-            if job["District"] == selected_district
-        ]
-
-    st.subheader(f"Selected area: {selected_district}")
-
-    col1, col2 = st.columns(2)
-
-    col1.metric("Students", len(filtered_students))
-    col2.metric("Jobs", len(filtered_jobs))
+    st.caption("Sample demonstration data. Replace with verified PLFS or official labour-market data.")
 
     st.divider()
 
@@ -838,7 +1229,7 @@ def admin_page():
 
     skill_count = {}
 
-    for job in filtered_jobs:
+    for job in jobs:
         for skill in job["Skills"]:
             skill_count[skill] = skill_count.get(skill, 0) + 1
 
@@ -850,82 +1241,19 @@ def admin_page():
 
         st.bar_chart(skill_df.set_index("Skill"))
         st.dataframe(skill_df, use_container_width=True)
-    else:
-        st.info("No job skills available.")
-
-    st.divider()
-
-    st.subheader("Skills available among students")
-
-    student_skill_count = {}
-
-    for student in filtered_students:
-        for skill in student["Skills"]:
-            student_skill_count[skill] = student_skill_count.get(skill, 0) + 1
-
-    if student_skill_count:
-        student_skill_df = pd.DataFrame(
-            sorted(student_skill_count.items(), key=lambda x: x[1], reverse=True),
-            columns=["Skill", "Number of students"]
-        )
-
-        st.bar_chart(student_skill_df.set_index("Skill"))
-        st.dataframe(student_skill_df, use_container_width=True)
-    else:
-        st.info("No student skills available.")
-
-    st.divider()
-
-    st.subheader("District-wise students")
-
-    if students:
-        district_students = {}
-
-        for student in students:
-            district_students[student["District"]] = district_students.get(
-                student["District"], 0
-            ) + 1
-
-        district_df = pd.DataFrame(
-            sorted(district_students.items(), key=lambda x: x[1], reverse=True),
-            columns=["District", "Students"]
-        )
-
-        st.bar_chart(district_df.set_index("District"))
-        st.dataframe(district_df, use_container_width=True)
-
-    st.divider()
-
-    st.subheader("District-wise jobs")
-
-    if jobs:
-        district_jobs = {}
-
-        for job in jobs:
-            district_jobs[job["District"]] = district_jobs.get(
-                job["District"], 0
-            ) + 1
-
-        job_district_df = pd.DataFrame(
-            sorted(district_jobs.items(), key=lambda x: x[1], reverse=True),
-            columns=["District", "Jobs"]
-        )
-
-        st.bar_chart(job_district_df.set_index("District"))
-        st.dataframe(job_district_df, use_container_width=True)
 
     st.divider()
 
     st.subheader("Skill gap summary")
 
-    if filtered_jobs and filtered_students:
+    if jobs and students:
         job_skills = set()
         student_skills = set()
 
-        for job in filtered_jobs:
+        for job in jobs:
             job_skills.update(job["Skills"])
 
-        for student in filtered_students:
+        for student in students:
             student_skills.update(student["Skills"])
 
         missing_skills = sorted(job_skills - student_skills)
@@ -956,31 +1284,10 @@ def admin_page():
                 "skill_gap_report.csv",
                 "text/csv"
             )
-
         else:
-            st.success("No major skill gap found for the selected area.")
+            st.success("No major skill gap found.")
     else:
         st.info("Add students and jobs to see skill gap.")
-
-    st.divider()
-
-    st.subheader("Job fair participants")
-
-    if registrations:
-        participants_df = pd.DataFrame(registrations)
-
-        st.dataframe(participants_df, use_container_width=True)
-
-        csv = participants_df.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Download job-fair participants",
-            csv,
-            "job_fair_participants.csv",
-            "text/csv"
-        )
-    else:
-        st.info("No job-fair registrations yet.")
 
 # ---------------- AI Copilot ----------------
 
@@ -1010,73 +1317,36 @@ def copilot_page():
 
     st.metric("Match score", f"{score}%")
 
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Matched skills", len(matched))
-    col2.metric("Missing skills", len(missing))
-    col3.metric("Required skills", len(job["Skills"]))
-
-    st.subheader("AI career guidance")
-
     if score >= 80:
-        st.success(
-            f"{student['Name']} is highly suitable for {job['Title']} "
-            f"with a match score of {score}%."
-        )
+        st.success(f"{student['Name']} is highly suitable for {job['Title']}.")
     elif score >= 50:
-        st.warning(
-            f"{student['Name']} is partially suitable for {job['Title']} "
-            f"with a match score of {score}%. Some skills need improvement."
-        )
+        st.warning(f"{student['Name']} is partially suitable for {job['Title']}.")
     else:
-        st.error(
-            f"{student['Name']} needs significant preparation for {job['Title']} "
-            f"with a match score of only {score}%."
-        )
-
-    st.subheader("Skills already matching")
-
-    if matched:
-        st.write(", ".join(matched))
-    else:
-        st.info("No matching skills found.")
+        st.error(f"{student['Name']} needs preparation for {job['Title']}.")
 
     st.subheader("Skills to learn")
 
     if missing:
         for skill in missing:
             st.write(f"• **{skill}** — {TRAINING.get(skill, 'Skill-specific training')}")
-
-        st.info(
-            "Complete the recommended training for the missing skills, "
-            "then update your student profile to improve your match score."
-        )
     else:
-        st.success("No missing skills. The student meets all listed job requirements.")
+        st.success("No missing skills.")
 
     st.subheader("Career action plan")
 
     if missing:
         st.write(
-            f"1. Learn the missing skills: {', '.join(missing)}.\n"
-            f"2. Complete the recommended training courses.\n"
-            f"3. Add these skills to your CV and student profile.\n"
-            f"4. Apply for {job['Title']} after improving your match score."
+            f"1. Learn: {', '.join(missing)}.\n"
+            f"2. Complete recommended training.\n"
+            f"3. Update CV and profile.\n"
+            f"4. Apply for {job['Title']}."
         )
     else:
         st.write(
-            f"1. Maintain and improve your existing skills.\n"
-            f"2. Build projects using {', '.join(student['Skills'])}.\n"
-            f"3. Apply for {job['Title']} opportunities."
+            f"1. Improve existing skills.\n"
+            f"2. Build projects.\n"
+            f"3. Apply for {job['Title']}."
         )
-
-    st.subheader("Data used for this guidance")
-
-    st.write("**Student skills:**")
-    st.write(", ".join(student["Skills"]))
-
-    st.write("**Job required skills:**")
-    st.write(", ".join(job["Skills"]))
 
 # ---------------- Main ----------------
 
@@ -1089,16 +1359,39 @@ def main():
     st.sidebar.write(f"**Role:** {st.session_state.role}")
     st.sidebar.write(f"**User:** {st.session_state.username}")
 
-    page = st.sidebar.radio(
-        "Go to",
-        [
-            "Home",
+    pages = ["Home"]
+
+    if st.session_state.role == "Student":
+        pages += [
             "🎯 Job Matching",
             "🎪 Job Fair",
+            "🎓 Training Programs",
+            "🔔 Notifications",
+            "🤖 AI Career Guidance"
+        ]
+
+    elif st.session_state.role == "Company":
+        pages += [
+            "🎯 Job Matching",
+            "🔔 Notifications"
+        ]
+
+    elif st.session_state.role == "Training Institute":
+        pages += [
+            "🎓 Training Programs",
+            "🔔 Notifications"
+        ]
+
+    else:
+        pages += [
+            "🎯 Job Matching",
+            "🎪 Job Fair",
+            "🎓 Training Programs",
             "🏛️ District Dashboard",
             "🤖 AI Career Guidance"
         ]
-    )
+
+    page = st.sidebar.radio("Go to", pages)
 
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
@@ -1110,7 +1403,19 @@ def main():
         matching_page()
 
     elif page == "🎪 Job Fair":
-        job_fair_page()
+        if st.session_state.role == "Student":
+            student_fair_apply_page()
+        else:
+            job_fair_page()
+
+    elif page == "🎓 Training Programs":
+        if st.session_state.role == "Training Institute":
+            training_page()
+        else:
+            student_training_page()
+
+    elif page == "🔔 Notifications":
+        notifications_page()
 
     elif page == "🏛️ District Dashboard":
         admin_page()
@@ -1124,7 +1429,93 @@ def main():
     elif st.session_state.role == "Company":
         company_page()
 
+    elif st.session_state.role == "Training Institute":
+        training_page()
+
     else:
         admin_page()
+
+
+def student_fair_apply_page():
+    st.title("🎪 Job Fair Applications")
+
+    fairs = get_job_fairs()
+
+    if not fairs:
+        st.warning("No job fairs available.")
+        st.stop()
+
+    for fair in fairs:
+        with st.expander(f"{fair['Name']} — {fair['District']} ({fair['Date']})"):
+            st.write("**Required / preferred skills:** Open to all registered students")
+
+            if st.button("Apply", key=f"fair_apply_{fair['Name']}"):
+                student = next(
+                    (s for s in get_students() if s["Name"] == st.session_state.username),
+                    None
+                )
+
+                skills = ", ".join(student["Skills"]) if student else "No skills added"
+
+                save_fair_registration(
+                    fair["Name"],
+                    st.session_state.username,
+                    skills,
+                    "Student"
+                )
+
+                st.success("Job-fair application submitted.")
+
+
+def student_training_page():
+    st.title("🎓 Training Programs")
+
+    programs = get_training_programs()
+
+    if not programs:
+        st.info("No training programs available.")
+        st.stop()
+
+    student = next(
+        (s for s in get_students() if s["Name"] == st.session_state.username),
+        None
+    )
+
+    student_skills = set(student["Skills"]) if student else set()
+
+    for program in programs:
+        matched = sorted(student_skills & set(program["Skills"]))
+        missing = sorted(set(program["Skills"]) - student_skills)
+
+        with st.expander(
+            f"{program['Program']} — {program['Institute']} | {program['District']}"
+        ):
+            st.write("**Skills covered:**")
+            st.write(", ".join(program["Skills"]))
+
+            st.write("**Your matching skills:**")
+            st.write(", ".join(matched) if matched else "None")
+
+            st.write("**Skills you can learn:**")
+            st.write(", ".join(missing) if missing else "None")
+
+            st.write(f"**Duration:** {program['Duration']}")
+
+            if st.button(
+                "I am interested",
+                key=f"interest_{program['ID']}"
+            ):
+                added = save_training_interest(
+                    program["Program"],
+                    program["Institute"],
+                    st.session_state.username,
+                    student["District"] if student else ""
+                )
+
+                if added:
+                    st.success("Interest recorded.")
+                else:
+                    st.warning("You already expressed interest.")
+
 
 main()
