@@ -448,6 +448,49 @@ def clear_registrations():
     conn.close()
 
 
+def is_student_registered_for_fair(fair, student):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id FROM fair_registrations
+        WHERE fair = %s AND student = %s
+    """, (fair, student))
+
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    return row is not None
+
+
+def student_apply_for_fair(fair, student, student_skills):
+    if is_student_registered_for_fair(fair, student):
+        return False
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO fair_registrations (fair, student, skills)
+        VALUES (%s, %s, %s)
+    """, (fair, student, student_skills))
+
+    cur.execute("""
+        INSERT INTO notifications (student, message)
+        VALUES (%s, %s)
+    """, (
+        student,
+        f"You registered for job fair: {fair}"
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return True
+
+
 def apply_to_job(job_title, company, student, student_skills, score):
     conn = get_connection()
     cur = conn.cursor()
@@ -1233,6 +1276,65 @@ def job_fair_page():
         else:
             st.info("No registrations yet.")
 
+
+def student_job_fair_page():
+    st.title("🎪 Apply for Job Fairs")
+
+    fairs = get_job_fairs()
+
+    if not fairs:
+        st.info("No job fairs available.")
+        st.stop()
+
+    student_name = st.session_state.username
+
+    student = next(
+        (s for s in get_students() if s["Name"] == student_name),
+        None
+    )
+
+    student_skills = ", ".join(student["Skills"]) if student else "No skills added"
+
+    for fair in fairs:
+        already_registered = is_student_registered_for_fair(
+            fair["Name"],
+            student_name
+        )
+
+        with st.expander(
+            f"{fair['Name']} — {fair['District']} | {fair['Date']}"
+        ):
+            st.write(f"**District:** {fair['District']}")
+            st.write(f"**Date:** {fair['Date']}")
+            st.write(f"**Your skills:** {student_skills}")
+
+            if already_registered:
+                st.success("You have already registered for this job fair.")
+
+                if st.button(
+                    "Cancel registration",
+                    key=f"cancel_fair_{fair['Name']}"
+                ):
+                    delete_fair_registration(
+                        fair["Name"],
+                        student_name
+                    )
+                    st.rerun()
+
+            else:
+                if st.button(
+                    "Apply for job fair",
+                    key=f"apply_fair_{fair['Name']}"
+                ):
+                    student_apply_for_fair(
+                        fair["Name"],
+                        student_name,
+                        student_skills
+                    )
+
+                    st.success("You registered for this job fair.")
+                    st.rerun()
+
 # ---------------- Training Institute ----------------
 
 def training_page():
@@ -1644,7 +1746,7 @@ def main():
     if st.session_state.role == "Student":
         pages += [
             "🎯 Job Matching",
-            "🎪 Job Fair",
+            "🎪 Apply for Job Fairs",
             "🎓 Training Programs",
             "🔔 Notifications",
             "🤖 AI Career Guidance"
@@ -1685,6 +1787,9 @@ def main():
 
     elif page == "🎪 Job Fair":
         job_fair_page()
+
+    elif page == "🎪 Apply for Job Fairs":
+        student_job_fair_page()
 
     elif page == "🎓 Training Programs":
         if st.session_state.role == "Training Institute":
