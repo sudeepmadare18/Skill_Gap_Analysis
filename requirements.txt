@@ -4,3 +4,4 @@ numpy
 pypdf
 python-docx
 psycopg2-binary
+openai
