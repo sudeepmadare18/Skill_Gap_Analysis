@@ -52,16 +52,26 @@ def page_student():
     tabs = st.tabs(["🎯 Job Matching", "📝 My Applications", "🎓 Training", "🔔 Notifications"])
 
     with tabs[0]:
+        student = run_query("SELECT skills FROM students WHERE name=%s", (user,), fetch=True)
+        my_skills = set(s.strip().lower() for s in (student[0][0] or "").split(",") if s.strip()) if student else set()
+
         jobs = run_query("SELECT id, title, company, district, sector, skills, qualification FROM jobs", fetch=True)
         if not jobs:
             st.info("No jobs yet.")
         else:
             for j in jobs:
                 jid, title, company, district, sector, skills, qual = j
+                req = set(s.strip().lower() for s in (skills or "").split(",") if s.strip())
+                matched = my_skills & req
+                missing = req - my_skills
+                pct = round(len(matched) / len(req) * 100, 1) if req else 0
+
                 with st.container(border=True):
                     st.subheader(title)
                     st.write(f"**{company}** • {district} • {sector}")
-                    st.write(f"Skills: {skills} | Qualification: {qual}")
+                    st.write(f"Required skills: {skills}")
+                    st.progress(pct / 100)
+                    st.write(f"**Match: {pct}%** | ✅ Matched: {', '.join(matched) or 'None'} | ❌ Missing: {', '.join(missing) or 'None'}")
                     if st.button("Apply", key=f"apply{jid}"):
                         run_query("INSERT INTO job_applications (student, job_id, status) VALUES (%s,%s,'Applied')", (user, jid))
                         st.success("Application submitted!")
