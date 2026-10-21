@@ -990,4 +990,19 @@ def main():
     if page == "🎯 Job Matching":
         matching_page()
 
-    elif page == "🎪
+    elif page == "🎪 Job Fair":
+        job_fair_page()
+
+    elif page == "🏛️ District Dashboard":
+        admin_page()
+
+    elif st.session_state.role == "Student":
+        student_page()
+
+    elif st.session_state.role == "Company":
+        company_page()
+
+    else:
+        admin_page()
+
+main()
