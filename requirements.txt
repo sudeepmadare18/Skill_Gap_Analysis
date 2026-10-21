@@ -1,3 +1,6 @@
 streamlit
+streamlit
 pandas
 numpy
+pypdf
+python-docx
