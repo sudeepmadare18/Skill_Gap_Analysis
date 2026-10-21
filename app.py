@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+from pypdf import PdfReader
+from docx import Document as DocxDocument
 
 st.set_page_config(
     page_title="Skill Gap and Emerging Skills Intelligence",
@@ -7,22 +9,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- Initialise session ----------------
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "role" not in st.session_state:
-    st.session_state.role = None
-
-if "username" not in st.session_state:
-    st.session_state.username = ""
-
-if "student_skills" not in st.session_state:
-    st.session_state.student_skills = []
-
-if "job_skills" not in st.session_state:
-    st.session_state.job_skills = []
+st.title("🎯 Skill Gap and Emerging Skills Intelligence")
+st.caption(
+    "Module 1: Student CV vs Job Description skill-gap analysis, "
+    "job matching, and training recommendation."
+)
 
 # ---------------- Skill dictionary ----------------
 
@@ -68,7 +59,49 @@ TRAINING_RECOMMENDATIONS = {
     "Git": "Git and GitHub for Developers"
 }
 
+KARNATAKA_DISTRICTS = [
+    "Bagalkot", "Ballari", "Belagavi", "Bengaluru Rural", "Bengaluru Urban",
+    "Bidar", "Chamarajanagar", "Chikkaballapur", "Chikkamagaluru",
+    "Chitradurga", "Dakshina Kannada", "Davanagere", "Dharwad",
+    "Gadag", "Hassan", "Haveri", "Kalaburagi", "Kodagu", "Kolar",
+    "Koppal", "Mandya", "Mysuru", "Raichur", "Ramanagara",
+    "Shivamogga", "Tumakuru", "Udupi", "Uttara Kannada", "Vijayapura",
+    "Yadgir"
+]
+
+ENGINEERING_BRANCHES = [
+    "Computer Science and Engineering",
+    "Information Science and Engineering",
+    "Artificial Intelligence and Machine Learning",
+    "Data Science",
+    "Electronics and Communication Engineering",
+    "Electrical and Electronics Engineering",
+    "Mechanical Engineering",
+    "Civil Engineering",
+    "Other Engineering Branch"
+]
+
 # ---------------- Helper functions ----------------
+
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    text = ""
+
+    for page in reader.pages:
+        text += page.extract_text() or ""
+
+    return text
+
+
+def extract_text_from_docx(file):
+    document = DocxDocument(file)
+    text = ""
+
+    for paragraph in document.paragraphs:
+        text += paragraph.text + "\n"
+
+    return text
+
 
 def extract_skills(text):
     text = text.lower()
@@ -95,233 +128,219 @@ def calculate_match(student_skills, job_skills):
 
     return matched, missing, extra, match_score
 
-# ---------------- Login page ----------------
+# ---------------- Main layout ----------------
 
-def login_page():
-    st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-    st.subheader("Login")
+tab1, tab2, tab3 = st.tabs([
+    "👤 Student CV",
+    "🏢 Job Description",
+    "🎯 Skill Gap and Matching"
+])
 
-    role = st.selectbox(
-        "Select your role",
+# ---------------- Student CV tab ----------------
+
+with tab1:
+    st.subheader("Student profile and CV")
+
+    student_name = st.text_input("Student name")
+
+    qualification_type = st.selectbox(
+        "Qualification type",
         [
-            "Student",
-            "Company",
-            "Training Institute",
-            "District Admin",
-            "State Admin",
-            "Job Fair"
-        ]
-    )
-
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if username and password:
-            st.session_state.logged_in = True
-            st.session_state.role = role
-            st.session_state.username = username
-            st.rerun()
-        else:
-            st.error("Please enter username and password.")
-
-# ---------------- Student dashboard ----------------
-
-def student_dashboard():
-    st.title(f"👤 Student Dashboard — {st.session_state.username}")
-
-    tab1, tab2 = st.tabs(["👤 My CV and Skills", "🎯 Job Matching"])
-
-    with tab1:
-        st.subheader("My profile")
-
-        degree = st.selectbox(
+            "Engineering",
             "Degree",
-            ["BCA", "B.Sc.", "B.Com", "BA", "MCA", "M.Sc.", "MBA", "Other"]
-        )
-
-        district = st.selectbox(
-            "District",
-            [
-                "Bengaluru Urban",
-                "Mysuru",
-                "Belagavi",
-                "Kalaburagi",
-                "Dharwad",
-                "Dakshina Kannada",
-                "Other"
-            ]
-        )
-
-        github_url = st.text_input("GitHub profile URL")
-        linkedin_url = st.text_input("LinkedIn profile URL")
-
-        cv_file = st.file_uploader("Upload CV (TXT)", type=["txt"])
-        cv_text = ""
-
-        if cv_file is not None:
-            cv_text = cv_file.read().decode("utf-8", errors="ignore")
-            st.success("CV uploaded.")
-
-        manual_cv = st.text_area("Or paste CV / skills text")
-
-        detected = extract_skills(cv_text + " " + manual_cv)
-
-        st.session_state.student_skills = st.multiselect(
-            "Confirm / add your skills",
-            ALL_SKILLS,
-            default=st.session_state.student_skills or detected
-        )
-
-        st.success(
-            "Saved skills: "
-            + (", ".join(st.session_state.student_skills) if st.session_state.student_skills else "None")
-        )
-
-    with tab2:
-        st.subheader("Match your skills with a job")
-
-        if not st.session_state.job_skills:
-            st.info("No job has been posted yet. Please ask a company to post a job.")
-            st.stop()
-
-        matched, missing, extra, score = calculate_match(
-            st.session_state.student_skills,
-            st.session_state.job_skills
-        )
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("JD-to-CV match score", f"{score}%")
-        col2.metric("Matched skills", len(matched))
-        col3.metric("Missing skills", len(missing))
-
-        st.subheader("Matched skills")
-        st.write(", ".join(matched) if matched else "None")
-
-        st.subheader("Missing skills / Skill gap")
-        st.write(", ".join(missing) if missing else "No skill gap.")
-
-        st.subheader("Recommended training")
-
-        if missing:
-            rows = []
-
-            for skill in missing:
-                rows.append({
-                    "Missing skill": skill,
-                    "Recommended training": TRAINING_RECOMMENDATIONS.get(
-                        skill,
-                        "Skill-specific training programme"
-                    )
-                })
-
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
-        else:
-            st.success("No training required based on listed job skills.")
-
-# ---------------- Company dashboard ----------------
-
-def company_dashboard():
-    st.title(f"🏢 Company Dashboard — {st.session_state.username}")
-
-    st.subheader("Post a job")
-
-    job_title = st.text_input("Job title")
-    job_description = st.text_area("Job description / responsibilities")
-
-    detected = extract_skills(job_description)
-
-    st.session_state.job_skills = st.multiselect(
-        "Required job skills",
-        ALL_SKILLS,
-        default=st.session_state.job_skills or detected
-    )
-
-    required_degree = st.selectbox(
-        "Required degree",
-        ["Any degree", "BCA", "B.Sc.", "B.Com", "BA", "MCA", "M.Sc.", "MBA"]
-    )
-
-    job_district = st.selectbox(
-        "Job district",
-        [
-            "Bengaluru Urban",
-            "Mysuru",
-            "Belagavi",
-            "Kalaburagi",
-            "Dharwad",
-            "Dakshina Kannada",
+            "PG",
+            "Diploma",
+            "ITI",
             "Other"
         ]
     )
 
-    if st.button("Save job posting"):
-        if job_title and st.session_state.job_skills:
-            st.success("Job posted successfully.")
-        else:
-            st.error("Enter job title and select at least one required skill.")
+    if qualification_type == "Engineering":
+        student_degree = st.selectbox(
+            "Engineering branch",
+            ENGINEERING_BRANCHES
+        )
+    else:
+        student_degree = st.text_input("Enter degree / course name")
 
-    st.subheader("Current job requirements")
-    st.write(", ".join(st.session_state.job_skills) if st.session_state.job_skills else "None")
-
-# ---------------- Admin dashboard ----------------
-
-def admin_dashboard():
-    st.title("🏛️ Labour and Skill Department Dashboard")
-
-    st.info(
-        "This dashboard will show district-wise and state-wise job openings, "
-        "skill demand, student employment data, and sector growth."
+    district = st.selectbox(
+        "District",
+        KARNATAKA_DISTRICTS
     )
 
-    st.subheader("Current platform data")
+    github_url = st.text_input("GitHub profile URL")
+    linkedin_url = st.text_input("LinkedIn profile URL")
 
-    col1, col2 = st.columns(2)
+    cv_file = st.file_uploader(
+        "Upload CV",
+        type=["pdf", "docx", "txt"]
+    )
 
-    col1.metric("Student skills entered", len(st.session_state.student_skills))
-    col2.metric("Job skills required", len(st.session_state.job_skills))
+    cv_text = ""
 
-    st.subheader("Skill demand and supply snapshot")
+    if cv_file is not None:
+        file_name = cv_file.name.lower()
 
-    data = pd.DataFrame({
-        "Category": ["Student skills", "Job-required skills"],
-        "Count": [
-            len(st.session_state.student_skills),
-            len(st.session_state.job_skills)
+        try:
+            if file_name.endswith(".pdf"):
+                cv_text = extract_text_from_pdf(cv_file)
+                st.success("PDF CV uploaded and text extracted.")
+
+            elif file_name.endswith(".docx"):
+                cv_text = extract_text_from_docx(cv_file)
+                st.success("DOCX CV uploaded and text extracted.")
+
+            elif file_name.endswith(".txt"):
+                cv_text = cv_file.read().decode("utf-8", errors="ignore")
+                st.success("TXT CV uploaded and text extracted.")
+
+        except Exception as e:
+            st.error("Could not read this file. Please try another CV file.")
+
+    manual_cv = st.text_area(
+        "Or paste your CV / skills text",
+        value=""
+    )
+
+    final_cv_text = cv_text + " " + manual_cv
+
+    detected_student_skills = extract_skills(final_cv_text)
+
+    selected_student_skills = st.multiselect(
+        "Confirm / add your skills",
+        ALL_SKILLS,
+        default=detected_student_skills
+    )
+
+    st.success(
+        "Student skills saved: "
+        + (", ".join(selected_student_skills) if selected_student_skills else "None")
+    )
+
+# ---------------- Job description tab ----------------
+
+with tab2:
+    st.subheader("Company job posting")
+
+    company_name = st.text_input("Company name")
+    job_title = st.text_input("Job title")
+
+    job_description = st.text_area(
+        "Paste job description / responsibilities",
+        value=""
+    )
+
+    selected_job_skills = st.multiselect(
+        "Confirm / add required job skills",
+        ALL_SKILLS,
+        default=extract_skills(job_description)
+    )
+
+    required_degree = st.selectbox(
+        "Required qualification",
+        [
+            "Any qualification",
+            "Engineering",
+            "BCA",
+            "B.Sc.",
+            "B.Com",
+            "BA",
+            "MCA",
+            "M.Sc.",
+            "MBA",
+            "Diploma",
+            "ITI"
         ]
+    )
+
+    job_district = st.selectbox(
+        "Job district",
+        KARNATAKA_DISTRICTS
+    )
+
+    st.success(
+        "Job requirements saved: "
+        + (", ".join(selected_job_skills) if selected_job_skills else "None")
+    )
+
+# ---------------- Skill gap tab ----------------
+
+with tab3:
+    st.subheader("Student CV vs Job Description")
+
+    if not selected_student_skills:
+        st.warning("Please select at least one student skill in the Student CV tab.")
+        st.stop()
+
+    if not selected_job_skills:
+        st.warning("Please select at least one required job skill in the Job Description tab.")
+        st.stop()
+
+    matched, missing, extra, match_score = calculate_match(
+        selected_student_skills,
+        selected_job_skills
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("JD-to-CV match score", f"{match_score}%")
+    col2.metric("Matched skills", len(matched))
+    col3.metric("Missing skills", len(missing))
+
+    st.subheader("Matched skills")
+    st.write(", ".join(matched) if matched else "None")
+
+    st.subheader("Missing skills / Skill gap")
+    st.write(", ".join(missing) if missing else "No skill gap. Student meets all listed job skills.")
+
+    st.subheader("Additional student skills")
+    st.write(", ".join(extra) if extra else "None")
+
+    st.subheader("Skill-gap visualisation")
+
+    gap_data = pd.DataFrame({
+        "Category": ["Matched skills", "Missing skills"],
+        "Count": [len(matched), len(missing)]
     })
 
-    st.bar_chart(data.set_index("Category"))
+    st.bar_chart(gap_data.set_index("Category"))
 
-# ---------------- Main app ----------------
+    st.subheader("Recommended training to fill the gap")
 
-def main():
-    if not st.session_state.logged_in:
-        login_page()
-        return
+    if missing:
+        recommendations = []
 
-    st.sidebar.title("Navigation")
-    st.sidebar.write(f"**Role:** {st.session_state.role}")
-    st.sidebar.write(f"**User:** {st.session_state.username}")
+        for skill in missing:
+            recommendations.append({
+                "Missing skill": skill,
+                "Recommended training": TRAINING_RECOMMENDATIONS.get(
+                    skill,
+                    "Skill-specific training programme"
+                )
+            })
 
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.session_state.username = ""
-        st.rerun()
+        st.dataframe(pd.DataFrame(recommendations), use_container_width=True)
 
-    if st.session_state.role == "Student":
-        student_dashboard()
+    else:
+        st.success("No training recommendation required based on the listed job skills.")
 
-    elif st.session_state.role == "Company":
-        company_dashboard()
+    st.subheader("Student roadmap")
 
-    elif st.session_state.role in [
-        "Training Institute",
-        "District Admin",
-        "State Admin",
-        "Job Fair"
-    ]:
-        admin_dashboard()
+    if missing:
+        roadmap = []
 
-main()
+        for i, skill in enumerate(missing, start=1):
+            roadmap.append(
+                f"{i}. Learn {skill} through: "
+                f"{TRAINING_RECOMMENDATIONS.get(skill, 'Skill-specific training programme')}"
+            )
+
+        st.write("\n".join(roadmap))
+    else:
+        st.write("Student already covers the listed job requirements. Focus on interview preparation and portfolio building.")
+
+    st.info(
+        "This match is based on skills listed in the student CV and job description. "
+        "It does not verify real proficiency. GitHub, LinkedIn, projects, certifications, "
+        "and assessments can be used later for deeper skill verification."
+    )
