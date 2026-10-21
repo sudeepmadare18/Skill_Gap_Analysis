@@ -6,9 +6,26 @@ from datetime import date
 
 st.set_page_config(page_title="Skill Bridge Karnataka", page_icon="🌉", layout="wide")
 
-# ---------- DB ----------
+# ---------- DB (auto-detects your secret key) ----------
 def get_conn():
-    return psycopg2.connect(st.secrets["database"]["url"])
+    secrets = st.secrets
+    url = None
+    for key in ["database", "db", "postgres", "neon"]:
+        if key in secrets:
+            s = secrets[key]
+            url = s.get("url") or s.get("connection_string") or s.get("database_url")
+            if url:
+                break
+    if not url:
+        for k in secrets.keys():
+            v = secrets[k]
+            if isinstance(v, str) and v.startswith("postgres"):
+                url = v
+                break
+    if not url:
+        st.error("Database URL not found in Secrets. Check Streamlit Cloud → Manage app → Secrets.")
+        st.stop()
+    return psycopg2.connect(url)
 
 def run_query(sql, params=None, fetch=False):
     conn = get_conn()
@@ -28,7 +45,7 @@ def insert_many(sql, rows):
     cur.close()
     conn.close()
 
-# ---------- Pages ----------
+# ---------- Student ----------
 def page_student():
     st.title("🎓 Student Dashboard")
     user = st.session_state["user"]
@@ -39,18 +56,20 @@ def page_student():
         if not jobs:
             st.info("No jobs yet.")
         else:
-            df = pd.DataFrame(jobs, columns=["id","title","company","district","sector","skills","qualification"])
-            for _, r in df.iterrows():
+            for j in jobs:
+                jid, title, company, district, sector, skills, qual = j
                 with st.container(border=True):
-                    st.subheader(r["title"])
-                    st.write(f"**{r['company']}** • {r['district']} • {r['sector']}")
-                    st.write(f"Skills: {r['skills']} | Qualification: {r['qualification']}")
-                    if st.button("Apply", key=f"apply{r['id']}"):
-                        run_query("INSERT INTO job_applications (student, job_id, status) VALUES (%s,%s,'Applied')", (user, r["id"]))
+                    st.subheader(title)
+                    st.write(f"**{company}** • {district} • {sector}")
+                    st.write(f"Skills: {skills} | Qualification: {qual}")
+                    if st.button("Apply", key=f"apply{jid}"):
+                        run_query("INSERT INTO job_applications (student, job_id, status) VALUES (%s,%s,'Applied')", (user, jid))
                         st.success("Application submitted!")
 
     with tabs[1]:
-        apps = run_query("SELECT a.id, j.title, a.status, a.interview_date, a.feedback FROM job_applications a JOIN jobs j ON j.id=a.job_id WHERE a.student=%s", (user,), fetch=True)
+        apps = run_query("""SELECT a.id, j.title, a.status, a.interview_date, a.feedback
+                            FROM job_applications a JOIN jobs j ON j.id=a.job_id
+                            WHERE a.student=%s""", (user,), fetch=True)
         if apps:
             st.dataframe(pd.DataFrame(apps, columns=["ID","Job","Status","Interview","Feedback"]), use_container_width=True)
         else:
@@ -59,8 +78,7 @@ def page_student():
     with tabs[2]:
         t = run_query("SELECT id, institute, program_name, skills_taught FROM training_programs", fetch=True)
         if t:
-            df = pd.DataFrame(t, columns=["id","institute","program","skills"])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(pd.DataFrame(t, columns=["ID","Institute","Program","Skills"]), use_container_width=True)
             pid = st.number_input("Program ID to express interest", min_value=1, step=1)
             if st.button("I'm interested"):
                 run_query("INSERT INTO training_interest (student, program_id) VALUES (%s,%s)", (user, int(pid)))
@@ -76,6 +94,7 @@ def page_student():
         else:
             st.info("No notifications.")
 
+# ---------- Company ----------
 def page_company():
     st.title("🏢 Company Dashboard")
     user = st.session_state["user"]
@@ -98,20 +117,19 @@ def page_company():
         apps = run_query("""SELECT a.id, a.student, j.title, a.status FROM job_applications a
                             JOIN jobs j ON j.id=a.job_id WHERE j.company=%s""", (user,), fetch=True)
         if apps:
-            df = pd.DataFrame(apps, columns=["App ID","Student","Job","Status"])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(pd.DataFrame(apps, columns=["App ID","Student","Job","Status"]), use_container_width=True)
             aid = st.number_input("Application ID", min_value=1, step=1)
             new_status = st.selectbox("New status", ["Shortlisted","Interview","Selected","Rejected"])
             if st.button("Update status"):
                 run_query("UPDATE job_applications SET status=%s WHERE id=%s", (new_status, int(aid)))
-                run_query("INSERT INTO notifications (username, message) VALUES ((SELECT student FROM job_applications WHERE id=%s), %s)",
+                run_query("""INSERT INTO notifications (username, message)
+                             VALUES ((SELECT student FROM job_applications WHERE id=%s), %s)""",
                           (int(aid), f"Your application status: {new_status}"))
                 st.success("Status updated!")
         else:
             st.info("No applicants yet.")
 
     with tab3:
-        st.write("Schedule interview / give feedback")
         aid = st.number_input("Application ID", min_value=1, step=1, key="fb")
         idate = st.date_input("Interview date", value=date.today())
         feedback = st.text_area("Feedback")
@@ -119,6 +137,7 @@ def page_company():
             run_query("UPDATE job_applications SET interview_date=%s, feedback=%s WHERE id=%s", (idate, feedback, int(aid)))
             st.success("Saved!")
 
+# ---------- Institute ----------
 def page_institute():
     st.title("🎓 Training Institute")
     user = st.session_state["user"]
@@ -133,6 +152,7 @@ def page_institute():
     if t:
         st.dataframe(pd.DataFrame(t, columns=["ID","Program","Skills"]), use_container_width=True)
 
+# ---------- Admin ----------
 def page_admin():
     st.title("🏛️ District Dashboard")
     tab1, tab2, tab3 = st.tabs(["Analytics", "Job Matching", "Job Fair"])
@@ -151,11 +171,10 @@ def page_admin():
         if jobs:
             jid = st.selectbox("Choose job", jobs, format_func=lambda x: x[1])
             students = run_query("SELECT name, skills FROM students", fetch=True)
-            req = set(s.strip().lower() for s in jid[2].split(",") if s.strip())
+            req = set(s.strip().lower() for s in (jid[2] or "").split(",") if s.strip())
             for name, skills in students:
                 have = set(s.strip().lower() for s in (skills or "").split(",") if s.strip())
-                match = len(req & have)
-                st.write(f"**{name}** — match {match}/{len(req)} skills | Missing: {', '.join(req-have) or 'None'}")
+                st.write(f"**{name}** — match {len(req & have)}/{len(req)} | Missing: {', '.join(req - have) or 'None'}")
         else:
             st.info("No jobs.")
 
@@ -171,6 +190,7 @@ def page_admin():
         if fairs:
             st.dataframe(pd.DataFrame(fairs, columns=["ID","Name","Date","District"]), use_container_width=True)
 
+# ---------- CSV upload ----------
 def upload_csv():
     st.sidebar.subheader("📤 Bulk upload CSV")
     kind = st.sidebar.selectbox("Data type", ["Students","Jobs","Training programs"])
@@ -192,7 +212,6 @@ def upload_csv():
 def main():
     st.sidebar.title("🌉 Skill Bridge Karnataka")
 
-    # One-click role switcher
     demo = {
         "Student (student1)": ("Student","student1","student123"),
         "Company (company1)": ("Company","company1","company123"),
