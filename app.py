@@ -3,15 +3,15 @@ import pandas as pd
 from collections import Counter
 
 st.set_page_config(
-    page_title="KSISU Module 3",
-    page_icon="📊",
+    page_title="Skill Gap and Emerging Skills Intelligence",
+    page_icon="🎯",
     layout="wide"
 )
 
-st.title("KSISU Module 3: Skill Demand and Curriculum Gap Analysis")
+st.title("🎯 Skill Gap and Emerging Skills Intelligence")
 st.caption(
-    "This tool analyses skills mentioned in uploaded Karnataka job postings and compares "
-    "them with a course curriculum. It measures curriculum coverage, not worker shortage."
+    "Module 1: Student CV vs Job Description skill-gap analysis, "
+    "job matching, and training recommendation."
 )
 
 # ---------------- Skill dictionary ----------------
@@ -26,290 +26,275 @@ SKILL_DICT = {
     "Linux": ["linux"],
     "Machine learning": ["machine learning", "ml"],
     "Data analysis": ["data analysis", "data analytics"],
-    "Communication": ["communication"],
+    "Communication": ["communication", "communication skills"],
+    "Java": ["java"],
+    "HTML": ["html"],
+    "CSS": ["css"],
+    "JavaScript": ["javascript", "js"],
+    "React": ["react"],
+    "Node.js": ["node.js", "nodejs"],
+    "Git": ["git", "github"],
 }
 
 ALL_SKILLS = list(SKILL_DICT.keys())
 
-# ---------------- File upload ----------------
+# ---------------- Training recommendations ----------------
 
-uploaded_file = st.file_uploader(
-    "Upload Karnataka job postings CSV",
-    type=["csv"]
-)
+TRAINING_RECOMMENDATIONS = {
+    "Excel": "Advanced Excel and Data Reporting",
+    "SQL": "SQL for Data Analysis",
+    "Python": "Python Programming for Data and Automation",
+    "Power BI": "Power BI Dashboard Development",
+    "Tableau": "Tableau Data Visualisation",
+    "Cloud computing": "Cloud Fundamentals and AWS Basics",
+    "Linux": "Linux Administration Basics",
+    "Machine learning": "Machine Learning Foundations",
+    "Data analysis": "Data Analytics with Python",
+    "Communication": "Professional Communication and Interview Skills",
+    "Java": "Java Programming Fundamentals",
+    "HTML": "Web Development with HTML",
+    "CSS": "Web Development with CSS",
+    "JavaScript": "JavaScript for Web Development",
+    "React": "React Frontend Development",
+    "Node.js": "Backend Development with Node.js",
+    "Git": "Git and GitHub for Developers"
+}
 
-if uploaded_file is None:
-    st.info("Please upload a CSV file containing job descriptions.")
-    st.stop()
-
-df = pd.read_csv(uploaded_file, dtype=str)
-
-if df.empty:
-    st.error("The uploaded CSV file is empty.")
-    st.stop()
-
-st.success(f"Uploaded {len(df)} job records.")
-
-st.write("**Columns found in your CSV:**")
-st.write(list(df.columns))
-
-text_col = st.selectbox(
-    "Select the column containing job descriptions",
-    df.columns,
-    index=0
-)
-
-job_text = (
-    df[text_col]
-    .dropna()
-    .astype(str)
-    .str.lower()
-    .tolist()
-)
-
-# ---------------- Skill extraction ----------------
+# ---------------- Helper functions ----------------
 
 def extract_skills(text):
+    text = text.lower()
     found = []
+
     for skill, keywords in SKILL_DICT.items():
         for keyword in keywords:
             if keyword in text:
                 found.append(skill)
                 break
-    return found
 
-skill_counts = Counter()
-co_occurrence = Counter()
+    return list(set(found))
 
-for text in job_text:
-    skills = extract_skills(text)
 
-    for skill in skills:
-        skill_counts[skill] += 1
+def calculate_match(student_skills, job_skills):
+    student_set = set(student_skills)
+    job_set = set(job_skills)
 
-    for i in range(len(skills)):
-        for j in range(i + 1, len(skills)):
-            pair = tuple(sorted([skills[i], skills[j]]))
-            co_occurrence[pair] += 1
+    matched = sorted(student_set & job_set)
+    missing = sorted(job_set - student_set)
+    extra = sorted(student_set - job_set)
 
-skills_df = pd.DataFrame(
-    [(skill, count) for skill, count in skill_counts.items()],
-    columns=["Skill", "Mentions"]
-).sort_values("Mentions", ascending=False)
+    if len(job_set) == 0:
+        match_score = 0
+    else:
+        match_score = round(len(matched) / len(job_set) * 100, 1)
 
-if skills_df.empty:
-    st.warning("No recognised skills were found in the selected column.")
-    st.stop()
+    return matched, missing, extra, match_score
 
-# ---------------- Tabs ----------------
+# ---------------- Main layout ----------------
 
-t1, t2, t3, t4 = st.tabs([
-    "Skill demand",
-    "Occupation mapping",
-    "Co-occurrence",
-    "Curriculum gap analysis"
+tab1, tab2, tab3 = st.tabs([
+    "👤 Student CV",
+    "🏢 Job Description",
+    "🎯 Skill Gap and Matching"
 ])
 
-# ---------------- Tab 1: Skill demand ----------------
+# ---------------- Student CV tab ----------------
 
-with t1:
-    st.subheader("Skill demand in uploaded job postings")
+with tab1:
+    st.subheader("Student profile and CV")
 
-    st.bar_chart(skills_df.set_index("Skill"))
-
-    st.dataframe(
-        skills_df,
-        use_container_width=True
-    )
-
-    st.info(
-        "Higher mention counts indicate more frequent demand in this uploaded sample. "
-        "They do not prove statewide labour-market demand."
-    )
-
-# ---------------- Tab 2: Occupation mapping ----------------
-
-with t2:
-    st.subheader("Occupation mapping")
-
-    st.write(
-        "This table shows how often each recognised skill appears across the uploaded job records."
-    )
-
-    occupation_df = skills_df.copy()
-    occupation_df["Share of records mentioning skill"] = (
-        occupation_df["Mentions"] / len(job_text) * 100
-    ).round(1)
-
-    occupation_df["Share of records mentioning skill"] = (
-        occupation_df["Share of records mentioning skill"].astype(str) + "%"
-    )
-
-    st.dataframe(
-        occupation_df,
-        use_container_width=True
-    )
-
-    st.caption(
-        "Job postings are used as a proxy for occupational skill requirements. "
-        "A posting may mention multiple skills."
-    )
-
-# ---------------- Tab 3: Co-occurrence ----------------
-
-with t3:
-    st.subheader("Skill co-occurrence")
-
-    if co_occurrence:
-        co_df = pd.DataFrame(
-            [(a, b, count) for (a, b), count in co_occurrence.items()],
-            columns=["Skill 1", "Skill 2", "Jobs mentioning both"]
-        ).sort_values("Jobs mentioning both", ascending=False)
-
-        co_df["Skill pair"] = co_df["Skill 1"] + " + " + co_df["Skill 2"]
-
-        st.dataframe(
-            co_df,
-            use_container_width=True
-        )
-
-        st.bar_chart(
-            co_df.set_index("Skill pair")["Jobs mentioning both"]
-        )
-
-    else:
-        st.info("No skill pairs were found in the uploaded job descriptions.")
-
-# ---------------- Tab 4: Curriculum gap ----------------
-
-with t4:
-    st.subheader("Which observed job skills are missing from a course baseline?")
-
-    st.write(
-        "This calculates curriculum coverage, not Karnataka’s worker shortage. "
-        "Job data alone cannot establish worker supply."
-    )
-
-    baseline_type = st.selectbox(
-        "Choose baseline type",
+    student_name = st.text_input("Student name")
+    student_degree = st.selectbox(
+        "Degree",
         [
-            "Illustrative demo baseline",
-            "Actual course syllabus",
-            "Custom course baseline"
+            "BCA",
+            "B.Sc.",
+            "B.Com",
+            "BA",
+            "MCA",
+            "M.Sc.",
+            "MBA",
+            "Other"
         ]
     )
 
-    course_options = [
-        "BCA / B.Sc. Computer Science",
-        "MCA / M.Sc. Computer Science",
-        "Data Analytics Course",
-        "Python Full Stack Course",
-        "Custom course"
-    ]
-
-    course_name = st.selectbox(
-        "Choose course",
-        course_options
+    district = st.selectbox(
+        "District",
+        [
+            "Bengaluru Urban",
+            "Mysuru",
+            "Belagavi",
+            "Kalaburagi",
+            "Dharwad",
+            "Dakshina Kannada",
+            "Other"
+        ]
     )
 
-    if course_name == "Custom course":
-        course_name = st.text_input("Enter custom course name")
+    github_url = st.text_input("GitHub profile URL")
+    linkedin_url = st.text_input("LinkedIn profile URL")
 
-    syllabus_options = [
-        "College syllabus PDF",
-        "University syllabus website",
-        "Course curriculum document",
-        "Training institute syllabus",
-        "Custom syllabus reference"
-    ]
-
-    syllabus_url = st.selectbox(
-        "Choose syllabus reference type",
-        syllabus_options
+    cv_file = st.file_uploader(
+        "Upload CV (TXT file for this prototype)",
+        type=["txt"]
     )
 
-    if syllabus_url == "Custom syllabus reference":
-        syllabus_url = st.text_input("Enter syllabus reference or URL")
+    cv_text = ""
 
-    selected_skills = st.multiselect(
-        "Choose skills explicitly covered in the course",
+    if cv_file is not None:
+        cv_text = cv_file.read().decode("utf-8", errors="ignore")
+        st.success("CV uploaded successfully.")
+
+    manual_cv = st.text_area(
+        "Or paste your CV / skills text",
+        value=""
+    )
+
+    final_cv_text = cv_text + " " + manual_cv
+
+    detected_student_skills = extract_skills(final_cv_text)
+
+    selected_student_skills = st.multiselect(
+        "Confirm / add your skills",
         ALL_SKILLS,
-        default=["Excel", "SQL"]
+        default=detected_student_skills
     )
 
-    st.info(
-        "**What is curriculum gap analysis?**  \n"
-        "It compares the skills demanded in the uploaded job postings with the skills "
-        "listed in your selected course baseline.  \n\n"
-        "**Coverage gap** means the share of job-posting skill mentions that are **not** "
-        "covered by the selected course skills.  \n\n"
-        "For example, if job postings mention 8 skill records and your course covers only "
-        "1 of them, the coverage gap is 87.5%.  \n\n"
-        "This is **not** a worker-shortage, placement, or employability percentage."
+    st.success(
+        "Student skills saved: "
+        + (", ".join(selected_student_skills) if selected_student_skills else "None")
     )
 
-    covered_skills = [skill.lower() for skill in selected_skills]
+# ---------------- Job description tab ----------------
 
-    gap_df = skills_df.copy()
-    gap_df["Covered"] = gap_df["Skill"].str.lower().isin(covered_skills)
+with tab2:
+    st.subheader("Company job posting")
 
-    total_mentions = gap_df["Mentions"].sum()
-    covered_mentions = gap_df.loc[gap_df["Covered"], "Mentions"].sum()
+    company_name = st.text_input("Company name")
+    job_title = st.text_input("Job title")
 
-    if total_mentions > 0:
-        coverage_gap = 100 * (total_mentions - covered_mentions) / total_mentions
-    else:
-        coverage_gap = 0
+    job_description = st.text_area(
+        "Paste job description / responsibilities",
+        value=""
+    )
+
+    selected_job_skills = st.multiselect(
+        "Confirm / add required job skills",
+        ALL_SKILLS,
+        default=extract_skills(job_description)
+    )
+
+    required_degree = st.selectbox(
+        "Required degree",
+        [
+            "Any degree",
+            "BCA",
+            "B.Sc.",
+            "B.Com",
+            "BA",
+            "MCA",
+            "M.Sc.",
+            "MBA"
+        ]
+    )
+
+    job_district = st.selectbox(
+        "Job district",
+        [
+            "Bengaluru Urban",
+            "Mysuru",
+            "Belagavi",
+            "Kalaburagi",
+            "Dharwad",
+            "Dakshina Kannada",
+            "Other"
+        ]
+    )
+
+    st.success(
+        "Job requirements saved: "
+        + (", ".join(selected_job_skills) if selected_job_skills else "None")
+    )
+
+# ---------------- Skill gap tab ----------------
+
+with tab3:
+    st.subheader("Student CV vs Job Description")
+
+    if not selected_student_skills:
+        st.warning("Please select at least one student skill in the Student CV tab.")
+        st.stop()
+
+    if not selected_job_skills:
+        st.warning("Please select at least one required job skill in the Job Description tab.")
+        st.stop()
+
+    matched, missing, extra, match_score = calculate_match(
+        selected_student_skills,
+        selected_job_skills
+    )
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "Skills not listed",
-        f"{int((~gap_df['Covered']).sum())} / {len(gap_df)}"
-    )
+    col1.metric("JD-to-CV match score", f"{match_score}%")
+    col2.metric("Matched skills", len(matched))
+    col3.metric("Missing skills", len(missing))
 
-    col2.metric(
-        "Skills listed",
-        f"{int(gap_df['Covered'].sum())} / {len(gap_df)}"
-    )
+    st.subheader("Matched skills")
+    st.write(", ".join(matched) if matched else "None")
 
-    col3.metric(
-        "Mention-weighted coverage gap",
-        f"{coverage_gap:.1f}%"
-    )
+    st.subheader("Missing skills / Skill gap")
+    st.write(", ".join(missing) if missing else "No skill gap. Student meets all listed job skills.")
 
-    missing_skills = gap_df[
-        (~gap_df["Covered"]) & (gap_df["Mentions"] > 0)
-    ]["Skill"].tolist()
+    st.subheader("Additional student skills")
+    st.write(", ".join(extra) if extra else "None")
 
-    st.subheader("Topics to investigate for curriculum coverage")
-    st.write(", ".join(missing_skills) if missing_skills else "None")
+    st.subheader("Skill-gap visualisation")
+
+    gap_data = pd.DataFrame({
+        "Category": ["Matched skills", "Missing skills"],
+        "Count": [len(matched), len(missing)]
+    })
+
+    st.bar_chart(gap_data.set_index("Category"))
+
+    st.subheader("Recommended training to fill the gap")
+
+    if missing:
+        recommendations = []
+
+        for skill in missing:
+            recommendations.append({
+                "Missing skill": skill,
+                "Recommended training": TRAINING_RECOMMENDATIONS.get(
+                    skill,
+                    "Skill-specific training programme"
+                )
+            })
+
+        recommendation_df = pd.DataFrame(recommendations)
+        st.dataframe(recommendation_df, use_container_width=True)
+
+    else:
+        st.success("No training recommendation required based on the listed job skills.")
+
+    st.subheader("Student roadmap")
+
+    if missing:
+        roadmap = []
+
+        for i, skill in enumerate(missing, start=1):
+            roadmap.append(
+                f"{i}. Learn {skill} through: "
+                f"{TRAINING_RECOMMENDATIONS.get(skill, 'Skill-specific training programme')}"
+            )
+
+        st.write("\n".join(roadmap))
+    else:
+        st.write("Student already covers the listed job requirements. Focus on interview preparation and portfolio building.")
 
     st.info(
-        "Not listed does not mean no training or skilled workers exist. "
-        "Covered does not verify proficiency. The starter dictionary may miss some skills "
-        "and does not separate mandatory from optional mentions."
-    )
-
-    st.subheader("Calculation and interpretation")
-
-    if total_mentions > 0:
-        st.write(
-            f"{total_mentions - covered_mentions} unlisted record–skill mentions / "
-            f"{total_mentions} total recognised record–skill mentions × 100 = "
-            f"{coverage_gap:.1f}%."
-        )
-    else:
-        st.write("No recognised skill mentions were found in the uploaded data.")
-
-    st.write(
-        "A record can mention several skills. This score measures mention-weighted coverage "
-        "of this sample against the selected baseline only. It is not a shortage, placement, "
-        "or employability percentage."
-    )
-
-    st.subheader("Selected source coverage")
-    st.dataframe(
-        gap_df,
-        use_container_width=True
+        "This match is based on skills listed in the student CV and job description. "
+        "It does not verify real proficiency. GitHub, LinkedIn, projects, certifications, "
+        "and assessments can be used later for deeper skill verification."
     )
