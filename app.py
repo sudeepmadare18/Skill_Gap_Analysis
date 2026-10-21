@@ -1652,4 +1652,66 @@ def main():
 
     elif st.session_state.role == "Company":
         pages += [
-            "🎯
+            "🎯 Job Matching",
+            "🔔 Notifications"
+        ]
+
+    elif st.session_state.role == "Training Institute":
+        pages += [
+            "🎓 Training Programs",
+            "🔔 Notifications"
+        ]
+
+    else:
+        pages += [
+            "🎯 Job Matching",
+            "🎪 Job Fair",
+            "🎓 Training Programs",
+            "🔔 Notifications",
+            "🏛️ District Dashboard",
+            "🤖 AI Career Guidance"
+        ]
+
+    page = st.sidebar.radio("Go to", pages)
+
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.session_state.username = ""
+        st.rerun()
+
+    if page == "🎯 Job Matching":
+        matching_page()
+
+    elif page == "🎪 Job Fair":
+        job_fair_page()
+
+    elif page == "🎓 Training Programs":
+        if st.session_state.role == "Training Institute":
+            training_page()
+        else:
+            student_training_page()
+
+    elif page == "🔔 Notifications":
+        notifications_page()
+
+    elif page == "🏛️ District Dashboard":
+        admin_page()
+
+    elif page == "🤖 AI Career Guidance":
+        copilot_page()
+
+    elif st.session_state.role == "Student":
+        student_page()
+
+    elif st.session_state.role == "Company":
+        company_page()
+
+    elif st.session_state.role == "Training Institute":
+        training_page()
+
+    else:
+        admin_page()
+
+
+main()
