@@ -446,6 +446,20 @@ def apply_to_job(job_title, company, student, student_skills, score):
     return True
 
 
+def delete_application(job_title, company, student):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        DELETE FROM job_applications
+        WHERE job_title = %s AND company = %s AND student = %s
+    """, (job_title, company, student))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def get_job_applications(company=None):
     conn = get_connection()
     cur = conn.cursor()
@@ -643,11 +657,28 @@ def student_page():
 
     jobs = get_jobs()
 
+    saved_skills = []
+
+    for student in students:
+        if student["Name"] == st.session_state.username:
+            saved_skills = student["Skills"]
+            break
+
+    if not saved_skills:
+        saved_skills = skills
+
     if jobs:
         for job in jobs:
             matched, missing, score = match_skills(
-                skills,
+                saved_skills,
                 job["Skills"]
+            )
+
+            already_applied = any(
+                a["Job"] == job["Title"]
+                and a["Company"] == job["Company"]
+                and a["Student"] == st.session_state.username
+                for a in get_job_applications()
             )
 
             with st.expander(
@@ -662,22 +693,37 @@ def student_page():
                 st.write("**Missing skills:**")
                 st.write(", ".join(missing) if missing else "None")
 
-                if st.button(
-                    "Apply",
-                    key=f"apply_{job['Title']}_{job['Company']}"
-                ):
-                    applied = apply_to_job(
-                        job["Title"],
-                        job["Company"],
-                        st.session_state.username,
-                        skills,
-                        score
-                    )
+                if already_applied:
+                    st.info("You already applied for this job.")
 
-                    if applied:
-                        st.success("Application submitted.")
-                    else:
-                        st.warning("You already applied for this job.")
+                    if st.button(
+                        "Delete my application",
+                        key=f"delete_app_{job['Title']}_{job['Company']}"
+                    ):
+                        delete_application(
+                            job["Title"],
+                            job["Company"],
+                            st.session_state.username
+                        )
+                        st.rerun()
+
+                else:
+                    if st.button(
+                        "Apply",
+                        key=f"apply_{job['Title']}_{job['Company']}"
+                    ):
+                        applied = apply_to_job(
+                            job["Title"],
+                            job["Company"],
+                            st.session_state.username,
+                            saved_skills,
+                            score
+                        )
+
+                        if applied:
+                            st.success("Application submitted.")
+                        else:
+                            st.warning("You already applied for this job.")
 
     else:
         st.info("No jobs available.")
