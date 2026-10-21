@@ -398,6 +398,7 @@ def get_jobs():
 
     for row in rows:
         jobs.append({
+            "ID": row["id"],
             "Company": row["company"],
             "Title": row["title"],
             "Description": row["description"],
@@ -981,7 +982,7 @@ def student_page():
 
                     if st.button(
                         "Delete my application",
-                        key=f"delete_app_{job['Title']}_{job['Company']}"
+                        key=f"delete_app_{job['ID']}"
                     ):
                         delete_application(
                             job["Title"],
@@ -993,7 +994,7 @@ def student_page():
                 else:
                     if st.button(
                         "Apply",
-                        key=f"apply_{job['Title']}_{job['Company']}"
+                        key=f"apply_{job['ID']}"
                     ):
                         applied = apply_to_job(
                             job["Title"],
@@ -2002,62 +2003,4 @@ def main():
         ]
 
     else:
-        pages += [
-            "🎯 Job Matching",
-            "🎪 Job Fair",
-            "🎓 Training Programs",
-            "🔔 Notifications",
-            "🏛️ District Dashboard",
-            "📊 Sector Analytics",
-            "🤖 AI Career Guidance"
-        ]
-
-    page = st.sidebar.radio("Go to", pages)
-
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.session_state.username = ""
-        st.rerun()
-
-    if page == "🎯 Job Matching":
-        matching_page()
-
-    elif page == "🎪 Job Fair":
-        job_fair_page()
-
-    elif page == "🎪 Apply for Job Fairs":
-        student_job_fair_page()
-
-    elif page == "🎓 Training Programs":
-        if st.session_state.role == "Training Institute":
-            training_page()
-        else:
-            student_training_page()
-
-    elif page == "🔔 Notifications":
-        notifications_page()
-
-    elif page == "🏛️ District Dashboard":
-        admin_page()
-
-    elif page == "📊 Sector Analytics":
-        sector_analytics_page()
-
-    elif page == "🤖 AI Career Guidance":
-        copilot_page()
-
-    elif st.session_state.role == "Student":
-        student_page()
-
-    elif st.session_state.role == "Company":
-        company_page()
-
-    elif st.session_state.role == "Training Institute":
-        training_page()
-
-    else:
-        admin_page()
-
-
-main()
+        pages
