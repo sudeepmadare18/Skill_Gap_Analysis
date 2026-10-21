@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, interviews, sector analytics, district dashboard, and AI career guidance.")
+st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, interviews, sector analytics, district dashboard, CSV bulk upload, and AI career guidance.")
 
 # ---------------- Database ----------------
 
@@ -741,6 +741,73 @@ def get_notifications(student):
         for row in rows
     ]
 
+# ---------------- CSV Bulk Upload ----------------
+
+def bulk_upload_jobs(csv_file):
+    df = pd.read_csv(csv_file)
+    count = 0
+
+    for _, row in df.iterrows():
+        skills = str(row["skills"]).split("|")
+        skills = [s.strip() for s in skills if s.strip()]
+
+        save_job(
+            str(row["company"]),
+            str(row["title"]),
+            str(row.get("description", "")),
+            skills,
+            str(row.get("degree", "Any qualification")),
+            str(row["district"]),
+            str(row.get("sector", "Other"))
+        )
+        count += 1
+
+    return count
+
+
+def bulk_upload_students(csv_file):
+    df = pd.read_csv(csv_file)
+    count = 0
+
+    for _, row in df.iterrows():
+        skills = str(row["skills"]).split("|")
+        skills = [s.strip() for s in skills if s.strip()]
+
+        save_student(
+            str(row["username"]),
+            str(row.get("degree", "")),
+            str(row["district"]),
+            str(row.get("github", "")),
+            str(row.get("linkedin", "")),
+            skills,
+            50,
+            str(row.get("projects", "")),
+            str(row.get("certifications", ""))
+        )
+        count += 1
+
+    return count
+
+
+def bulk_upload_training(csv_file):
+    df = pd.read_csv(csv_file)
+    count = 0
+
+    for _, row in df.iterrows():
+        skills = str(row["skills"]).split("|")
+        skills = [s.strip() for s in skills if s.strip()]
+
+        save_training_program(
+            str(row["institute"]),
+            str(row["program_name"]),
+            skills,
+            str(row["district"]),
+            str(row.get("duration", "3 months"))
+        )
+        count += 1
+
+    return count
+
 # ---------------- Session ----------------
 
 if "logged_in" not in st.session_state:
@@ -1033,6 +1100,22 @@ def company_page():
                 st.success("Job saved permanently.")
             else:
                 st.error("Enter job title and select skills.")
+
+        st.subheader("Bulk upload jobs from CSV")
+
+        jobs_csv = st.file_uploader(
+            "Upload jobs CSV",
+            type=["csv"],
+            key="jobs_csv_upload"
+        )
+
+        if jobs_csv is not None:
+            if st.button("Upload all jobs"):
+                try:
+                    count = bulk_upload_jobs(jobs_csv)
+                    st.success(f"{count} jobs added from CSV.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
         st.subheader("All jobs")
 
@@ -1428,6 +1511,22 @@ def training_page():
             else:
                 st.error("Enter program name and select skills.")
 
+        st.subheader("Bulk upload training programs from CSV")
+
+        training_csv = st.file_uploader(
+            "Upload training CSV",
+            type=["csv"],
+            key="training_csv_upload"
+        )
+
+        if training_csv is not None:
+            if st.button("Upload all training programs"):
+                try:
+                    count = bulk_upload_training(training_csv)
+                    st.success(f"{count} training programs added from CSV.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
         st.subheader("My programs")
 
         programs = get_training_programs()
@@ -1706,6 +1805,33 @@ def admin_page():
             st.success("No major skill gap found for the selected area.")
     else:
         st.info("Add students and jobs to see skill gap.")
+
+    st.divider()
+
+    st.subheader("Bulk upload data from CSV")
+
+    csv_type = st.selectbox(
+        "Choose what to upload",
+        ["Students", "Training programs"]
+    )
+
+    csv_file = st.file_uploader(
+        "Upload CSV file",
+        type=["csv"],
+        key="admin_csv_upload"
+    )
+
+    if csv_file is not None:
+        if st.button("Upload CSV data"):
+            try:
+                if csv_type == "Students":
+                    count = bulk_upload_students(csv_file)
+                    st.success(f"{count} students added from CSV.")
+                else:
+                    count = bulk_upload_training(csv_file)
+                    st.success(f"{count} training programs added from CSV.")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
     st.divider()
 
