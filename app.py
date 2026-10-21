@@ -5,7 +5,6 @@ import psycopg2.extras
 import json
 from pypdf import PdfReader
 from docx import Document as DocxDocument
-from openai import OpenAI
 
 st.set_page_config(
     page_title="Skill Gap and Emerging Skills Intelligence",
@@ -986,7 +985,7 @@ def admin_page():
 # ---------------- AI Copilot ----------------
 
 def copilot_page():
-    st.title("🤖 GenAI Career Guidance Copilot")
+    st.title("🤖 AI Career Guidance Copilot")
 
     students = get_students()
     jobs = get_jobs()
@@ -1011,59 +1010,73 @@ def copilot_page():
 
     st.metric("Match score", f"{score}%")
 
-    context = f"""
-Student name: {student['Name']}
-Student degree: {student['Degree']}
-Student district: {student['District']}
-Student skills: {', '.join(student['Skills'])}
+    col1, col2, col3 = st.columns(3)
 
-Job title: {job['Title']}
-Company: {job['Company']}
-Job district: {job['District']}
-Required skills: {', '.join(job['Skills'])}
+    col1.metric("Matched skills", len(matched))
+    col2.metric("Missing skills", len(missing))
+    col3.metric("Required skills", len(job["Skills"]))
 
-Matched skills: {', '.join(matched) if matched else 'None'}
-Missing skills: {', '.join(missing) if missing else 'None'}
-Match score: {score}%
-"""
+    st.subheader("AI career guidance")
 
-    question = st.text_area(
-        "Ask a career guidance question",
-        value=f"What skills should {student['Name']} learn to become suitable for {job['Title']}?"
-    )
+    if score >= 80:
+        st.success(
+            f"{student['Name']} is highly suitable for {job['Title']} "
+            f"with a match score of {score}%."
+        )
+    elif score >= 50:
+        st.warning(
+            f"{student['Name']} is partially suitable for {job['Title']} "
+            f"with a match score of {score}%. Some skills need improvement."
+        )
+    else:
+        st.error(
+            f"{student['Name']} needs significant preparation for {job['Title']} "
+            f"with a match score of only {score}%."
+        )
 
-    if st.button("Ask AI"):
-        try:
-            client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    st.subheader("Skills already matching")
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """
-You are a career guidance assistant for a skill-gap platform.
-Use only the provided student and job data.
-Give clear, practical advice.
-Do not invent skills or jobs that are not in the data.
-Mention missing skills and recommended training.
-Keep the answer short and useful.
-"""
-                    },
-                    {
-                        "role": "user",
-                        "content": context + "\n\nQuestion: " + question
-                    }
-                ]
-            )
+    if matched:
+        st.write(", ".join(matched))
+    else:
+        st.info("No matching skills found.")
 
-            answer = response.choices[0].message.content
+    st.subheader("Skills to learn")
 
-            st.subheader("AI guidance")
-            st.write(answer)
+    if missing:
+        for skill in missing:
+            st.write(f"• **{skill}** — {TRAINING.get(skill, 'Skill-specific training')}")
 
-        except Exception as e:
-            st.error(f"AI request failed: {e}")
+        st.info(
+            "Complete the recommended training for the missing skills, "
+            "then update your student profile to improve your match score."
+        )
+    else:
+        st.success("No missing skills. The student meets all listed job requirements.")
+
+    st.subheader("Career action plan")
+
+    if missing:
+        st.write(
+            f"1. Learn the missing skills: {', '.join(missing)}.\n"
+            f"2. Complete the recommended training courses.\n"
+            f"3. Add these skills to your CV and student profile.\n"
+            f"4. Apply for {job['Title']} after improving your match score."
+        )
+    else:
+        st.write(
+            f"1. Maintain and improve your existing skills.\n"
+            f"2. Build projects using {', '.join(student['Skills'])}.\n"
+            f"3. Apply for {job['Title']} opportunities."
+        )
+
+    st.subheader("Data used for this guidance")
+
+    st.write("**Student skills:**")
+    st.write(", ".join(student["Skills"]))
+
+    st.write("**Job required skills:**")
+    st.write(", ".join(job["Skills"]))
 
 # ---------------- Main ----------------
 
