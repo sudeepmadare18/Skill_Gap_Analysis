@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, district dashboard, and AI career guidance.")
+st.caption("Student CV, company jobs, skill-gap matching, job fair, training programs, interviews, district dashboard, and AI career guidance.")
 
 # ---------------- Database ----------------
 
@@ -84,8 +84,20 @@ def init_db():
             student TEXT,
             student_skills TEXT,
             match_score NUMERIC,
-            status TEXT DEFAULT 'Applied'
+            status TEXT DEFAULT 'Applied',
+            interview_date TEXT,
+            feedback TEXT
         )
+    """)
+
+    cur.execute("""
+        ALTER TABLE job_applications
+        ADD COLUMN IF NOT EXISTS interview_date TEXT
+    """)
+
+    cur.execute("""
+        ALTER TABLE job_applications
+        ADD COLUMN IF NOT EXISTS feedback TEXT
     """)
 
     cur.execute("""
@@ -499,15 +511,53 @@ def get_job_applications(company=None):
 
     return [
         {
+            "ID": row["id"],
             "Job": row["job_title"],
             "Company": row["company"],
             "Student": row["student"],
             "Skills": row["student_skills"],
             "Match score": row["match_score"],
-            "Status": row["status"]
+            "Status": row["status"],
+            "Interview date": row["interview_date"],
+            "Feedback": row["feedback"]
         }
         for row in rows
     ]
+
+
+def update_application_status(app_id, status, interview_date=None, feedback=None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE job_applications
+        SET status = %s,
+            interview_date = %s,
+            feedback = %s
+        WHERE id = %s
+    """, (status, interview_date, feedback, app_id))
+
+    cur.execute(
+        "SELECT student, job_title FROM job_applications WHERE id = %s",
+        (app_id,)
+    )
+
+    row = cur.fetchone()
+
+    if row:
+        message = f"Your application for {row['job_title']} is now: {status}"
+
+        if interview_date:
+            message += f" | Interview date: {interview_date}"
+
+        cur.execute("""
+            INSERT INTO notifications (student, message)
+            VALUES (%s, %s)
+        """, (row["student"], message))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def save_training_program(institute, program_name, skills, district, duration):
@@ -779,11 +829,13 @@ def student_page():
                 job["Skills"]
             )
 
+            applications = get_job_applications()
+
             already_applied = any(
                 a["Job"] == job["Title"]
                 and a["Company"] == job["Company"]
                 and a["Student"] == st.session_state.username
-                for a in get_job_applications()
+                for a in applications
             )
 
             with st.expander(
@@ -838,9 +890,10 @@ def student_page():
 def company_page():
     st.title("🏢 Company Dashboard")
 
-    tab1, tab2 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "Post job",
-        "Applicants"
+        "Applicants",
+        "Interview and feedback"
     ])
 
     with tab1:
@@ -916,6 +969,51 @@ def company_page():
             st.dataframe(df, use_container_width=True)
         else:
             st.info("No applications yet.")
+
+    with tab3:
+        st.subheader("Schedule interview and give feedback")
+
+        applications = get_job_applications(
+            company=st.session_state.username
+        )
+
+        if not applications:
+            st.info("No applications yet.")
+            st.stop()
+
+        app_options = [
+            f"{a['Student']} — {a['Job']} ({a['Status']})"
+            for a in applications
+        ]
+
+        selected = st.selectbox("Select application", app_options)
+
+        application = applications[app_options.index(selected)]
+
+        new_status = st.selectbox(
+            "Update status",
+            [
+                application["Status"],
+                "Shortlisted",
+                "Interview Scheduled",
+                "Selected",
+                "Rejected"
+            ]
+        )
+
+        interview_date = st.date_input("Interview date")
+
+        feedback = st.text_area("Feedback")
+
+        if st.button("Update application"):
+            update_application_status(
+                application["ID"],
+                new_status,
+                str(interview_date) if new_status == "Interview Scheduled" else None,
+                feedback
+            )
+
+            st.success("Application updated and student notified.")
 
 # ---------------- Matching ----------------
 
@@ -1554,66 +1652,4 @@ def main():
 
     elif st.session_state.role == "Company":
         pages += [
-            "🎯 Job Matching",
-            "🔔 Notifications"
-        ]
-
-    elif st.session_state.role == "Training Institute":
-        pages += [
-            "🎓 Training Programs",
-            "🔔 Notifications"
-        ]
-
-    else:
-        pages += [
-            "🎯 Job Matching",
-            "🎪 Job Fair",
-            "🎓 Training Programs",
-            "🔔 Notifications",
-            "🏛️ District Dashboard",
-            "🤖 AI Career Guidance"
-        ]
-
-    page = st.sidebar.radio("Go to", pages)
-
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.session_state.username = ""
-        st.rerun()
-
-    if page == "🎯 Job Matching":
-        matching_page()
-
-    elif page == "🎪 Job Fair":
-        job_fair_page()
-
-    elif page == "🎓 Training Programs":
-        if st.session_state.role == "Training Institute":
-            training_page()
-        else:
-            student_training_page()
-
-    elif page == "🔔 Notifications":
-        notifications_page()
-
-    elif page == "🏛️ District Dashboard":
-        admin_page()
-
-    elif page == "🤖 AI Career Guidance":
-        copilot_page()
-
-    elif st.session_state.role == "Student":
-        student_page()
-
-    elif st.session_state.role == "Company":
-        company_page()
-
-    elif st.session_state.role == "Training Institute":
-        training_page()
-
-    else:
-        admin_page()
-
-
-main()
+            "🎯
