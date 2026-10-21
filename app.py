@@ -5,6 +5,7 @@ import psycopg2.extras
 import json
 from pypdf import PdfReader
 from docx import Document as DocxDocument
+from openai import OpenAI
 
 st.set_page_config(
     page_title="Skill Gap and Emerging Skills Intelligence",
@@ -13,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
-st.caption("Student CV, company jobs, skill-gap matching, job fair, and district dashboard.")
+st.caption("Student CV, company jobs, skill-gap matching, job fair, district dashboard, and AI career guidance.")
 
 # ---------------- Database ----------------
 
@@ -982,6 +983,88 @@ def admin_page():
     else:
         st.info("No job-fair registrations yet.")
 
+# ---------------- AI Copilot ----------------
+
+def copilot_page():
+    st.title("🤖 GenAI Career Guidance Copilot")
+
+    students = get_students()
+    jobs = get_jobs()
+
+    if not students or not jobs:
+        st.warning("Add at least one student and one job.")
+        st.stop()
+
+    student_names = [student["Name"] for student in students]
+    job_titles = [job["Title"] for job in jobs]
+
+    selected_student = st.selectbox("Select student", student_names)
+    selected_job = st.selectbox("Select job", job_titles)
+
+    student = next(s for s in students if s["Name"] == selected_student)
+    job = next(j for j in jobs if j["Title"] == selected_job)
+
+    matched, missing, score = match_skills(
+        student["Skills"],
+        job["Skills"]
+    )
+
+    st.metric("Match score", f"{score}%")
+
+    context = f"""
+Student name: {student['Name']}
+Student degree: {student['Degree']}
+Student district: {student['District']}
+Student skills: {', '.join(student['Skills'])}
+
+Job title: {job['Title']}
+Company: {job['Company']}
+Job district: {job['District']}
+Required skills: {', '.join(job['Skills'])}
+
+Matched skills: {', '.join(matched) if matched else 'None'}
+Missing skills: {', '.join(missing) if missing else 'None'}
+Match score: {score}%
+"""
+
+    question = st.text_area(
+        "Ask a career guidance question",
+        value=f"What skills should {student['Name']} learn to become suitable for {job['Title']}?"
+    )
+
+    if st.button("Ask AI"):
+        try:
+            client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """
+You are a career guidance assistant for a skill-gap platform.
+Use only the provided student and job data.
+Give clear, practical advice.
+Do not invent skills or jobs that are not in the data.
+Mention missing skills and recommended training.
+Keep the answer short and useful.
+"""
+                    },
+                    {
+                        "role": "user",
+                        "content": context + "\n\nQuestion: " + question
+                    }
+                ]
+            )
+
+            answer = response.choices[0].message.content
+
+            st.subheader("AI guidance")
+            st.write(answer)
+
+        except Exception as e:
+            st.error(f"AI request failed: {e}")
+
 # ---------------- Main ----------------
 
 def main():
@@ -999,7 +1082,8 @@ def main():
             "Home",
             "🎯 Job Matching",
             "🎪 Job Fair",
-            "🏛️ District Dashboard"
+            "🏛️ District Dashboard",
+            "🤖 AI Career Guidance"
         ]
     )
 
@@ -1017,6 +1101,9 @@ def main():
 
     elif page == "🏛️ District Dashboard":
         admin_page()
+
+    elif page == "🤖 AI Career Guidance":
+        copilot_page()
 
     elif st.session_state.role == "Student":
         student_page()
