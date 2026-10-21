@@ -41,20 +41,9 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        ALTER TABLE students
-        ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 0
-    """)
-
-    cur.execute("""
-        ALTER TABLE students
-        ADD COLUMN IF NOT EXISTS projects TEXT
-    """)
-
-    cur.execute("""
-        ALTER TABLE students
-        ADD COLUMN IF NOT EXISTS certifications TEXT
-    """)
+    cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS projects TEXT")
+    cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS certifications TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
@@ -68,10 +57,7 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        ALTER TABLE jobs
-        ADD COLUMN IF NOT EXISTS sector TEXT
-    """)
+    cur.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS sector TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS job_fairs (
@@ -105,15 +91,8 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        ALTER TABLE job_applications
-        ADD COLUMN IF NOT EXISTS interview_date TEXT
-    """)
-
-    cur.execute("""
-        ALTER TABLE job_applications
-        ADD COLUMN IF NOT EXISTS feedback TEXT
-    """)
+    cur.execute("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS interview_date TEXT")
+    cur.execute("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS feedback TEXT")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS training_programs (
@@ -152,7 +131,7 @@ def init_db():
 
 init_db()
 
-# ---------------- Skills and lists ----------------
+# ---------------- Lists ----------------
 
 SKILL_DICT = {
     "Excel": ["excel"],
@@ -230,7 +209,7 @@ ENGINEERING = [
     "Other Engineering Branch"
 ]
 
-# ---------------- File reading ----------------
+# ---------------- Helpers ----------------
 
 def read_pdf(file):
     reader = PdfReader(file)
@@ -446,9 +425,7 @@ def get_job_fairs():
 def delete_job_fair(name):
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM job_fairs WHERE name = %s", (name,))
-
     conn.commit()
     cur.close()
     conn.close()
@@ -503,9 +480,7 @@ def delete_fair_registration(fair, student):
 def clear_registrations():
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM fair_registrations")
-
     conn.commit()
     cur.close()
     conn.close()
@@ -542,10 +517,7 @@ def student_apply_for_fair(fair, student, student_skills):
     cur.execute("""
         INSERT INTO notifications (student, message)
         VALUES (%s, %s)
-    """, (
-        student,
-        f"You registered for job fair: {fair}"
-    ))
+    """, (student, f"You registered for job fair: {fair}"))
 
     conn.commit()
     cur.close()
@@ -783,7 +755,6 @@ if "username" not in st.session_state:
 # ---------------- Login ----------------
 
 def login_page():
-    st.title("🎯 Skill Gap and Emerging Skills Intelligence")
     st.subheader("Login")
 
     role = st.selectbox(
@@ -884,12 +855,12 @@ def student_page():
 
     projects = st.text_area(
         "Projects done",
-        placeholder="Example: Sales dashboard using Power BI, Student result analysis using Python"
+        placeholder="Example: Student result analysis using Python and SQL"
     )
 
     certifications = st.text_area(
         "Certifications",
-        placeholder="Example: Python certification, SQL certification, AWS Cloud Practitioner"
+        placeholder="Example: Python certification"
     )
 
     detected = extract_skills(cv_text + " " + manual_cv)
@@ -1046,7 +1017,6 @@ def company_page():
         )
 
         district = st.selectbox("Job district", DISTRICTS)
-
         sector = st.selectbox("Job sector", SECTORS)
 
         if st.button("Save job"):
@@ -1133,7 +1103,6 @@ def company_page():
         )
 
         interview_date = st.date_input("Interview date")
-
         feedback = st.text_area("Feedback")
 
         if st.button("Update application"):
@@ -1423,7 +1392,7 @@ def student_job_fair_page():
                     st.success("You registered for this job fair.")
                     st.rerun()
 
-# ---------------- Training Institute ----------------
+# ---------------- Training ----------------
 
 def training_page():
     st.title("🎓 Training Institute Dashboard")
@@ -1444,7 +1413,6 @@ def training_page():
         )
 
         district = st.selectbox("District", DISTRICTS)
-
         duration = st.text_input("Duration", value="3 months")
 
         if st.button("Publish program"):
@@ -2003,4 +1971,62 @@ def main():
         ]
 
     else:
-        pages
+        pages += [
+            "🎯 Job Matching",
+            "🎪 Job Fair",
+            "🎓 Training Programs",
+            "🔔 Notifications",
+            "🏛️ District Dashboard",
+            "📊 Sector Analytics",
+            "🤖 AI Career Guidance"
+        ]
+
+    page = st.sidebar.radio("Go to", pages)
+
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.role = None
+        st.session_state.username = ""
+        st.rerun()
+
+    if page == "🎯 Job Matching":
+        matching_page()
+
+    elif page == "🎪 Job Fair":
+        job_fair_page()
+
+    elif page == "🎪 Apply for Job Fairs":
+        student_job_fair_page()
+
+    elif page == "🎓 Training Programs":
+        if st.session_state.role == "Training Institute":
+            training_page()
+        else:
+            student_training_page()
+
+    elif page == "🔔 Notifications":
+        notifications_page()
+
+    elif page == "🏛️ District Dashboard":
+        admin_page()
+
+    elif page == "📊 Sector Analytics":
+        sector_analytics_page()
+
+    elif page == "🤖 AI Career Guidance":
+        copilot_page()
+
+    elif st.session_state.role == "Student":
+        student_page()
+
+    elif st.session_state.role == "Company":
+        company_page()
+
+    elif st.session_state.role == "Training Institute":
+        training_page()
+
+    else:
+        admin_page()
+
+
+main()
