@@ -47,6 +47,16 @@ def init_db():
     """)
 
     cur.execute("""
+        ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS projects TEXT
+    """)
+
+    cur.execute("""
+        ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS certifications TEXT
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id SERIAL PRIMARY KEY,
             company TEXT,
@@ -263,32 +273,58 @@ def match_skills(student_skills, job_skills):
     return matched, missing, score
 
 
-def calculate_trust_score(github, linkedin, skills, cv_uploaded):
+def calculate_trust_score(github, linkedin, skills, cv_uploaded, projects, certifications):
     score = 0
+    breakdown = {}
 
-    if github and github.startswith("https://github.com/"):
-        score += 30
+    if github and "github.com" in github:
+        score += 25
+        breakdown["GitHub profile"] = 25
+    else:
+        breakdown["GitHub profile"] = 0
 
-    if linkedin and linkedin.startswith("https://linkedin.com/in/"):
-        score += 30
-
-    if len(skills) >= 3:
+    if linkedin and "linkedin.com" in linkedin:
         score += 20
+        breakdown["LinkedIn profile"] = 20
+    else:
+        breakdown["LinkedIn profile"] = 0
 
     if cv_uploaded:
-        score += 20
+        score += 15
+        breakdown["CV uploaded"] = 15
+    else:
+        breakdown["CV uploaded"] = 0
 
-    return score
+    if len(skills) >= 3:
+        score += 15
+        breakdown["Skills added"] = 15
+    else:
+        breakdown["Skills added"] = 0
+
+    if projects and len(projects.strip()) > 10:
+        score += 15
+        breakdown["Projects mentioned"] = 15
+    else:
+        breakdown["Projects mentioned"] = 0
+
+    if certifications and len(certifications.strip()) > 5:
+        score += 10
+        breakdown["Certifications mentioned"] = 10
+    else:
+        breakdown["Certifications mentioned"] = 0
+
+    return score, breakdown
 
 # ---------------- DB functions ----------------
 
-def save_student(username, degree, district, github, linkedin, skills, trust_score):
+def save_student(username, degree, district, github, linkedin, skills, trust_score, projects, certifications):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO students (username, degree, district, github, linkedin, skills, trust_score)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO students
+        (username, degree, district, github, linkedin, skills, trust_score, projects, certifications)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (username)
         DO UPDATE SET
             degree = EXCLUDED.degree,
@@ -296,8 +332,13 @@ def save_student(username, degree, district, github, linkedin, skills, trust_sco
             github = EXCLUDED.github,
             linkedin = EXCLUDED.linkedin,
             skills = EXCLUDED.skills,
-            trust_score = EXCLUDED.trust_score
-    """, (username, degree, district, github, linkedin, json.dumps(skills), trust_score))
+            trust_score = EXCLUDED.trust_score,
+            projects = EXCLUDED.projects,
+            certifications = EXCLUDED.certifications
+    """, (
+        username, degree, district, github, linkedin,
+        json.dumps(skills), trust_score, projects, certifications
+    ))
 
     conn.commit()
     cur.close()
@@ -322,7 +363,9 @@ def get_students():
             "GitHub": row["github"],
             "LinkedIn": row["linkedin"],
             "Skills": json.loads(row["skills"]),
-            "Trust score": row["trust_score"]
+            "Trust score": row["trust_score"],
+            "Projects": row["projects"] or "",
+            "Certifications": row["certifications"] or ""
         })
 
     return students
@@ -838,6 +881,16 @@ def student_page():
 
     manual_cv = st.text_area("Or paste CV / skills text")
 
+    projects = st.text_area(
+        "Projects done",
+        placeholder="Example: Sales dashboard using Power BI, Student result analysis using Python"
+    )
+
+    certifications = st.text_area(
+        "Certifications",
+        placeholder="Example: Python certification, SQL certification, AWS Cloud Practitioner"
+    )
+
     detected = extract_skills(cv_text + " " + manual_cv)
 
     skills = st.multiselect(
@@ -846,14 +899,20 @@ def student_page():
         default=detected
     )
 
-    trust_score = calculate_trust_score(
+    trust_score, trust_breakdown = calculate_trust_score(
         github,
         linkedin,
         skills,
-        cv_uploaded
+        cv_uploaded,
+        projects,
+        certifications
     )
 
     st.info(f"CV trust score: {trust_score}%")
+
+    with st.expander("CV trust score breakdown"):
+        for item, marks in trust_breakdown.items():
+            st.write(f"**{item}:** {marks} marks")
 
     if st.button("Save my profile"):
         if skills:
@@ -864,7 +923,9 @@ def student_page():
                 github,
                 linkedin,
                 skills,
-                trust_score
+                trust_score,
+                projects,
+                certifications
             )
             st.success("Profile saved permanently.")
         else:
