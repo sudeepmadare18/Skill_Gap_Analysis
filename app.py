@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import json
 from pypdf import PdfReader
 from docx import Document as DocxDocument
@@ -14,23 +15,22 @@ st.set_page_config(
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
 st.caption("Student CV, company jobs, skill-gap matching, job fair, and district dashboard.")
 
-DB_NAME = "skillgap.db"
+# ---------------- Database connection ----------------
 
-# ---------------- Database ----------------
-
-def get_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_connection():
+    return psycopg2.connect(
+        st.secrets["DATABASE_URL"],
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
 
 
 def init_db():
-    conn = get_db()
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT UNIQUE,
             degree TEXT,
             district TEXT,
@@ -42,7 +42,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             company TEXT,
             title TEXT,
             description TEXT,
@@ -54,7 +54,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS job_fairs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT,
             district TEXT,
             date TEXT
@@ -63,7 +63,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS fair_registrations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             fair TEXT,
             student TEXT,
             skills TEXT
@@ -71,6 +71,7 @@ def init_db():
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -184,30 +185,35 @@ def match_skills(student_skills, job_skills):
 
     return matched, missing, score
 
-# ---------------- DB helper functions ----------------
+# ---------------- Database functions ----------------
 
 def save_student(username, degree, district, github, linkedin, skills):
-    conn = get_db()
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         INSERT INTO students (username, degree, district, github, linkedin, skills)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(username) DO UPDATE SET
-            degree=excluded.degree,
-            district=excluded.district,
-            github=excluded.github,
-            linkedin=excluded.linkedin,
-            skills=excluded.skills
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (username)
+        DO UPDATE SET
+            degree = EXCLUDED.degree,
+            district = EXCLUDED.district,
+            github = EXCLUDED.github,
+            linkedin = EXCLUDED.linkedin,
+            skills = EXCLUDED.skills
     """, (username, degree, district, github, linkedin, json.dumps(skills)))
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_students():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM students").fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM students ORDER BY id")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     students = []
@@ -226,18 +232,25 @@ def get_students():
 
 
 def save_job(company, title, description, skills, degree, district):
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO jobs (company, title, description, skills, degree, district) VALUES (?, ?, ?, ?, ?, ?)",
-        (company, title, description, json.dumps(skills), degree, district)
-    )
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO jobs (company, title, description, skills, degree, district)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (company, title, description, json.dumps(skills), degree, district))
+
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_jobs():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM jobs").fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM jobs ORDER BY id DESC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     jobs = []
@@ -256,18 +269,25 @@ def get_jobs():
 
 
 def save_job_fair(name, district, date):
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO job_fairs (name, district, date) VALUES (?, ?, ?)",
-        (name, district, date)
-    )
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO job_fairs (name, district, date)
+        VALUES (%s, %s, %s)
+    """, (name, district, date))
+
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_job_fairs():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM job_fairs ORDER BY id DESC").fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM job_fairs ORDER BY id DESC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     return [
@@ -281,25 +301,36 @@ def get_job_fairs():
 
 
 def delete_job_fair(name):
-    conn = get_db()
-    conn.execute("DELETE FROM job_fairs WHERE name = ?", (name,))
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM job_fairs WHERE name = %s", (name,))
+
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def save_registration(fair, student, skills):
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO fair_registrations (fair, student, skills) VALUES (?, ?, ?)",
-        (fair, student, skills)
-    )
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO fair_registrations (fair, student, skills)
+        VALUES (%s, %s, %s)
+    """, (fair, student, skills))
+
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_registrations():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM fair_registrations ORDER BY id DESC").fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM fair_registrations ORDER BY id DESC")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     return [
@@ -313,19 +344,27 @@ def get_registrations():
 
 
 def delete_registration(fair, student):
-    conn = get_db()
-    conn.execute(
-        "DELETE FROM fair_registrations WHERE fair = ? AND student = ?",
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM fair_registrations WHERE fair = %s AND student = %s",
         (fair, student)
     )
+
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def clear_registrations():
-    conn = get_db()
-    conn.execute("DELETE FROM fair_registrations")
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM fair_registrations")
+
     conn.commit()
+    cur.close()
     conn.close()
 
 # ---------------- Session ----------------
@@ -951,19 +990,4 @@ def main():
     if page == "🎯 Job Matching":
         matching_page()
 
-    elif page == "🎪 Job Fair":
-        job_fair_page()
-
-    elif page == "🏛️ District Dashboard":
-        admin_page()
-
-    elif st.session_state.role == "Student":
-        student_page()
-
-    elif st.session_state.role == "Company":
-        company_page()
-
-    else:
-        admin_page()
-
-main()
+    elif page == "🎪
