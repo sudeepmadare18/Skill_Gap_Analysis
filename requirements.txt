@@ -1,6 +1,6 @@
 streamlit
-streamlit
 pandas
 numpy
 pypdf
 python-docx
+psycopg2-binary
