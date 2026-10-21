@@ -9,7 +9,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- Session state ----------------
+st.title("🎯 Skill Gap and Emerging Skills Intelligence")
+st.caption("Student CV, company jobs, skill-gap matching, and job fair module.")
+
+# ---------------- Session storage ----------------
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -26,7 +29,13 @@ if "students" not in st.session_state:
 if "jobs" not in st.session_state:
     st.session_state.jobs = []
 
-# ---------------- Skill dictionary ----------------
+if "job_fairs" not in st.session_state:
+    st.session_state.job_fairs = []
+
+if "fair_registrations" not in st.session_state:
+    st.session_state.fair_registrations = []
+
+# ---------------- Skills ----------------
 
 SKILL_DICT = {
     "Excel": ["excel"],
@@ -50,7 +59,7 @@ SKILL_DICT = {
 
 ALL_SKILLS = list(SKILL_DICT.keys())
 
-TRAINING_RECOMMENDATIONS = {
+TRAINING = {
     "Excel": "Advanced Excel and Data Reporting",
     "SQL": "SQL for Data Analysis",
     "Python": "Python Programming for Data and Automation",
@@ -70,7 +79,7 @@ TRAINING_RECOMMENDATIONS = {
     "Git": "Git and GitHub for Developers"
 }
 
-KARNATAKA_DISTRICTS = [
+DISTRICTS = [
     "Bagalkot", "Ballari", "Belagavi", "Bengaluru Rural", "Bengaluru Urban",
     "Bidar", "Chamarajanagar", "Chikkaballapur", "Chikkamagaluru",
     "Chitradurga", "Dakshina Kannada", "Davanagere", "Dharwad",
@@ -80,7 +89,7 @@ KARNATAKA_DISTRICTS = [
     "Yadgir"
 ]
 
-ENGINEERING_BRANCHES = [
+ENGINEERING = [
     "Computer Science and Engineering",
     "Information Science and Engineering",
     "Artificial Intelligence and Machine Learning",
@@ -92,25 +101,21 @@ ENGINEERING_BRANCHES = [
     "Other Engineering Branch"
 ]
 
-# ---------------- Helper functions ----------------
+# ---------------- Functions ----------------
 
-def extract_text_from_pdf(file):
+def read_pdf(file):
     reader = PdfReader(file)
     text = ""
-
     for page in reader.pages:
         text += page.extract_text() or ""
-
     return text
 
 
-def extract_text_from_docx(file):
-    document = DocxDocument(file)
+def read_docx(file):
+    doc = DocxDocument(file)
     text = ""
-
-    for paragraph in document.paragraphs:
-        text += paragraph.text + "\n"
-
+    for para in doc.paragraphs:
+        text += para.text + "\n"
     return text
 
 
@@ -118,16 +123,16 @@ def extract_skills(text):
     text = text.lower()
     found = []
 
-    for skill, keywords in SKILL_DICT.items():
-        for keyword in keywords:
-            if keyword in text:
+    for skill, words in SKILL_DICT.items():
+        for word in words:
+            if word in text:
                 found.append(skill)
                 break
 
     return list(set(found))
 
 
-def calculate_match(student_skills, job_skills):
+def match_skills(student_skills, job_skills):
     student_set = set(student_skills)
     job_set = set(job_skills)
 
@@ -138,14 +143,14 @@ def calculate_match(student_skills, job_skills):
 
     return matched, missing, score
 
-# ---------------- Login page ----------------
+# ---------------- Login ----------------
 
 def login_page():
     st.title("🎯 Skill Gap and Emerging Skills Intelligence")
     st.subheader("Login")
 
     role = st.selectbox(
-        "Select your role",
+        "Select role",
         [
             "Student",
             "Company",
@@ -166,71 +171,68 @@ def login_page():
             st.session_state.username = username
             st.rerun()
         else:
-            st.error("Please enter username and password.")
+            st.error("Enter username and password.")
 
-# ---------------- Student dashboard ----------------
+# ---------------- Student ----------------
 
-def student_dashboard():
-    st.title(f"👤 Student Dashboard — {st.session_state.username}")
+def student_page():
+    st.title("👤 Student Dashboard")
 
-    st.subheader("Add / update your profile")
+    st.subheader("My profile")
 
-    qualification_type = st.selectbox(
+    qualification = st.selectbox(
         "Qualification type",
         ["Engineering", "Degree", "PG", "Diploma", "ITI", "Other"]
     )
 
-    if qualification_type == "Engineering":
-        degree = st.selectbox("Engineering branch", ENGINEERING_BRANCHES)
+    if qualification == "Engineering":
+        degree = st.selectbox("Engineering branch", ENGINEERING)
     else:
         degree = st.text_input("Enter degree / course name")
 
-    district = st.selectbox("District", KARNATAKA_DISTRICTS)
+    district = st.selectbox("District", DISTRICTS)
 
-    github_url = st.text_input("GitHub profile URL")
-    linkedin_url = st.text_input("LinkedIn profile URL")
+    github = st.text_input("GitHub URL")
+    linkedin = st.text_input("LinkedIn URL")
 
-    cv_file = st.file_uploader(
-        "Upload CV",
-        type=["pdf", "docx", "txt"]
-    )
+    cv = st.file_uploader("Upload CV", type=["pdf", "docx", "txt"])
 
     cv_text = ""
 
-    if cv_file is not None:
-        file_name = cv_file.name.lower()
+    if cv is not None:
+        name = cv.name.lower()
 
         try:
-            if file_name.endswith(".pdf"):
-                cv_text = extract_text_from_pdf(cv_file)
-                st.success("PDF CV uploaded and text extracted.")
+            if name.endswith(".pdf"):
+                cv_text = read_pdf(cv)
+                st.success("PDF CV uploaded.")
 
-            elif file_name.endswith(".docx"):
-                cv_text = extract_text_from_docx(cv_file)
-                st.success("DOCX CV uploaded and text extracted.")
+            elif name.endswith(".docx"):
+                cv_text = read_docx(cv)
+                st.success("DOCX CV uploaded.")
 
-            elif file_name.endswith(".txt"):
-                cv_text = cv_file.read().decode("utf-8", errors="ignore")
-                st.success("TXT CV uploaded and text extracted.")
+            elif name.endswith(".txt"):
+                cv_text = cv.read().decode("utf-8", errors="ignore")
+                st.success("TXT CV uploaded.")
 
         except Exception:
-            st.error("Could not read this file. Please try another CV file.")
+            st.error("Could not read file.")
 
-    manual_cv = st.text_area("Or paste your CV / skills text")
+    manual_cv = st.text_area("Or paste CV / skills text")
 
-    detected_skills = extract_skills(cv_text + " " + manual_cv)
+    detected = extract_skills(cv_text + " " + manual_cv)
 
-    selected_skills = st.multiselect(
+    skills = st.multiselect(
         "Confirm / add your skills",
         ALL_SKILLS,
-        default=detected_skills
+        default=detected
     )
 
     if st.button("Save my profile"):
-        if st.session_state.username and selected_skills:
+        if skills:
             for student in st.session_state.students:
                 if student["Name"] == st.session_state.username:
-                    student["Skills"] = selected_skills
+                    student["Skills"] = skills
                     student["Degree"] = degree
                     student["District"] = district
                     break
@@ -239,98 +241,85 @@ def student_dashboard():
                     "Name": st.session_state.username,
                     "Degree": degree,
                     "District": district,
-                    "GitHub": github_url,
-                    "LinkedIn": linkedin_url,
-                    "Skills": selected_skills
+                    "GitHub": github,
+                    "LinkedIn": linkedin,
+                    "Skills": skills
                 })
 
-            st.success("Profile saved successfully.")
+            st.success("Profile saved.")
         else:
             st.error("Select at least one skill.")
 
-    st.subheader("My saved skills")
-    st.write(", ".join(selected_skills) if selected_skills else "None")
+    st.subheader("My skills")
+    st.write(", ".join(skills) if skills else "None")
 
-# ---------------- Company dashboard ----------------
+# ---------------- Company ----------------
 
-def company_dashboard():
-    st.title(f"🏢 Company Dashboard — {st.session_state.username}")
+def company_page():
+    st.title("🏢 Company Dashboard")
 
     st.subheader("Post a job")
 
     job_title = st.text_input("Job title")
-    job_description = st.text_area("Job description / responsibilities")
+    job_description = st.text_area("Job description")
 
-    detected_job_skills = extract_skills(job_description)
+    detected = extract_skills(job_description)
 
-    selected_job_skills = st.multiselect(
+    job_skills = st.multiselect(
         "Required job skills",
         ALL_SKILLS,
-        default=detected_job_skills
+        default=detected
     )
 
-    required_degree = st.selectbox(
+    degree = st.selectbox(
         "Required qualification",
         [
-            "Any qualification",
-            "Engineering",
-            "BCA",
-            "B.Sc.",
-            "B.Com",
-            "BA",
-            "MCA",
-            "M.Sc.",
-            "MBA",
-            "Diploma",
-            "ITI"
+            "Any qualification", "Engineering", "BCA", "B.Sc.", "B.Com",
+            "BA", "MCA", "M.Sc.", "MBA", "Diploma", "ITI"
         ]
     )
 
-    job_district = st.selectbox(
-        "Job district",
-        KARNATAKA_DISTRICTS
-    )
+    district = st.selectbox("Job district", DISTRICTS)
 
-    if st.button("Save job posting"):
-        if job_title and selected_job_skills:
+    if st.button("Save job"):
+        if job_title and job_skills:
             st.session_state.jobs.append({
                 "Company": st.session_state.username,
                 "Title": job_title,
                 "Description": job_description,
-                "Skills": selected_job_skills,
-                "Degree": required_degree,
-                "District": job_district
+                "Skills": job_skills,
+                "Degree": degree,
+                "District": district
             })
-
-            st.success("Job posted successfully.")
+            st.success("Job posted.")
         else:
-            st.error("Enter job title and select at least one required skill.")
+            st.error("Enter job title and select skills.")
 
-    st.subheader(f"My posted jobs: {len(st.session_state.jobs)}")
+    st.subheader(f"My jobs: {len(st.session_state.jobs)}")
 
     if st.session_state.jobs:
-        job_rows = []
+        rows = []
 
         for job in st.session_state.jobs:
-            job_rows.append({
-                "Job title": job["Title"],
+            rows.append({
+                "Job": job["Title"],
                 "District": job["District"],
-                "Required skills": ", ".join(job["Skills"])
+                "Skills": ", ".join(job["Skills"])
             })
 
-        st.dataframe(pd.DataFrame(job_rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-# ---------------- Matching dashboard ----------------
+# ---------------- Matching ----------------
 
-def matching_dashboard():
+def matching_page():
     st.title("🎯 Job Matching and Skill Gap")
 
     if not st.session_state.jobs:
-        st.warning("No jobs posted yet.")
+        st.warning("No jobs posted.")
         st.stop()
 
     if not st.session_state.students:
-        st.warning("No students added yet.")
+        st.warning("No students added.")
         st.stop()
 
     job_options = [
@@ -340,8 +329,7 @@ def matching_dashboard():
 
     selected_job = st.selectbox("Choose job", job_options)
 
-    job_index = job_options.index(selected_job)
-    job = st.session_state.jobs[job_index]
+    job = st.session_state.jobs[job_options.index(selected_job)]
 
     st.write("**Required skills:**")
     st.write(", ".join(job["Skills"]))
@@ -349,7 +337,7 @@ def matching_dashboard():
     results = []
 
     for student in st.session_state.students:
-        matched, missing, score = calculate_match(
+        matched, missing, score = match_skills(
             student["Skills"],
             job["Skills"]
         )
@@ -363,32 +351,24 @@ def matching_dashboard():
             "Missing skills": ", ".join(missing) if missing else "None"
         })
 
-    result_df = pd.DataFrame(results).sort_values(
-        "Match score",
-        ascending=False
-    )
+    df = pd.DataFrame(results).sort_values("Match score", ascending=False)
 
-    st.subheader("Student ranking for this job")
-    st.dataframe(result_df, use_container_width=True)
+    st.subheader("Student ranking")
+    st.dataframe(df, use_container_width=True)
 
     st.subheader("Detailed skill-gap report")
 
-    student_options = [
-        student["Name"] for student in st.session_state.students
-    ]
+    student_names = [student["Name"] for student in st.session_state.students]
 
-    selected_student_name = st.selectbox(
-        "Choose student",
-        student_options
+    selected_student = st.selectbox("Choose student", student_names)
+
+    student = next(
+        s for s in st.session_state.students
+        if s["Name"] == selected_student
     )
 
-    selected_student = next(
-        student for student in st.session_state.students
-        if student["Name"] == selected_student_name
-    )
-
-    matched, missing, score = calculate_match(
-        selected_student["Skills"],
+    matched, missing, score = match_skills(
+        student["Skills"],
         job["Skills"]
     )
 
@@ -412,48 +392,124 @@ def matching_dashboard():
         for skill in missing:
             rows.append({
                 "Missing skill": skill,
-                "Recommended training": TRAINING_RECOMMENDATIONS.get(
+                "Recommended training": TRAINING.get(
                     skill,
-                    "Skill-specific training programme"
+                    "Skill-specific training"
                 )
             })
 
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    else:
-        st.success("No training required based on listed job skills.")
 
-# ---------------- Admin dashboard ----------------
+# ---------------- Job fair ----------------
 
-def admin_dashboard():
+def job_fair_page():
+    st.title("🎪 Job Fair")
+
+    tab1, tab2, tab3 = st.tabs([
+        "Create job fair",
+        "Student registration",
+        "Participants"
+    ])
+
+    with tab1:
+        fair_name = st.text_input("Job fair name")
+        fair_district = st.selectbox("District", DISTRICTS)
+        fair_date = st.date_input("Job fair date")
+
+        if st.button("Create job fair"):
+            if fair_name:
+                st.session_state.job_fairs.append({
+                    "Name": fair_name,
+                    "District": fair_district,
+                    "Date": str(fair_date)
+                })
+                st.success("Job fair created.")
+            else:
+                st.error("Enter fair name.")
+
+        st.subheader(f"Job fairs: {len(st.session_state.job_fairs)}")
+
+        if st.session_state.job_fairs:
+            rows = []
+
+            for fair in st.session_state.job_fairs:
+                rows.append({
+                    "Fair": fair["Name"],
+                    "District": fair["District"],
+                    "Date": fair["Date"]
+                })
+
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    with tab2:
+        if not st.session_state.job_fairs:
+            st.warning("No job fairs available.")
+            st.stop()
+
+        fair_options = [
+            f"{fair['Name']} — {fair['District']} ({fair['Date']})"
+            for fair in st.session_state.job_fairs
+        ]
+
+        selected_fair = st.selectbox("Choose job fair", fair_options)
+
+        student_name = st.text_input("Student name")
+
+        if st.button("Register"):
+            if student_name:
+                skills = "No skills added"
+
+                for student in st.session_state.students:
+                    if student["Name"] == student_name:
+                        skills = ", ".join(student["Skills"])
+                        break
+
+                st.session_state.fair_registrations.append({
+                    "Fair": selected_fair,
+                    "Student": student_name,
+                    "Skills": skills
+                })
+
+                st.success("Student registered.")
+            else:
+                st.error("Enter student name.")
+
+    with tab3:
+        st.subheader("Registered students")
+
+        if st.session_state.fair_registrations:
+            st.dataframe(
+                pd.DataFrame(st.session_state.fair_registrations),
+                use_container_width=True
+            )
+        else:
+            st.info("No registrations yet.")
+
+# ---------------- Admin ----------------
+
+def admin_page():
     st.title("🏛️ Labour and Skill Department Dashboard")
-
-    st.info(
-        "This dashboard will show district-wise and state-wise job openings, "
-        "skill demand, student employment data, and sector growth."
-    )
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Students added", len(st.session_state.students))
-    col2.metric("Jobs posted", len(st.session_state.jobs))
-    col3.metric(
-        "Total student skills",
-        sum(len(student["Skills"]) for student in st.session_state.students)
-    )
+    col1.metric("Students", len(st.session_state.students))
+    col2.metric("Jobs", len(st.session_state.jobs))
+    col3.metric("Job fairs", len(st.session_state.job_fairs))
 
     st.subheader("Platform snapshot")
 
     data = pd.DataFrame({
-        "Category": ["Students", "Jobs"],
+        "Category": ["Students", "Jobs", "Job fairs"],
         "Count": [
             len(st.session_state.students),
-            len(st.session_state.jobs)
+            len(st.session_state.jobs),
+            len(st.session_state.job_fairs)
         ]
     })
 
     st.bar_chart(data.set_index("Category"))
 
-# ---------------- Main app ----------------
+# ---------------- Main ----------------
 
 def main():
     if not st.session_state.logged_in:
@@ -468,7 +524,8 @@ def main():
         "Go to",
         [
             "Home",
-            "🎯 Job Matching and Skill Gap"
+            "🎯 Job Matching",
+            "🎪 Job Fair"
         ]
     )
 
@@ -478,22 +535,19 @@ def main():
         st.session_state.username = ""
         st.rerun()
 
-    if page == "🎯 Job Matching and Skill Gap":
-        matching_dashboard()
-        return
+    if page == "🎯 Job Matching":
+        matching_page()
 
-    if st.session_state.role == "Student":
-        student_dashboard()
+    elif page == "🎪 Job Fair":
+        job_fair_page()
+
+    elif st.session_state.role == "Student":
+        student_page()
 
     elif st.session_state.role == "Company":
-        company_dashboard()
+        company_page()
 
-    elif st.session_state.role in [
-        "Training Institute",
-        "District Admin",
-        "State Admin",
-        "Job Fair"
-    ]:
-        admin_dashboard()
+    else:
+        admin_page()
 
 main()
