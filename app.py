@@ -741,6 +741,138 @@ def get_notifications(student):
         for row in rows
     ]
 
+# ---------------- CSV bulk upload ----------------
+
+def upload_csv():
+    st.sidebar.subheader("📤 Bulk upload CSV")
+    kind = st.sidebar.selectbox("Data type", ["Students", "Jobs", "Training programs"])
+    file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+    upload_btn = st.sidebar.button("Upload CSV data")
+
+    if file and upload_btn:
+        df = pd.read_csv(file)
+        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+        def get_col(options):
+            for o in options:
+                if o in df.columns:
+                    return o
+            return None
+
+        def to_skill_list(value):
+            if pd.isna(value):
+                return []
+            return [s.strip() for s in str(value).split(",") if s.strip()]
+
+        if kind == "Students":
+            n = get_col(["username", "name", "student_name", "student"])
+            d = get_col(["district", "location", "city"])
+            q = get_col(["degree", "qualification", "education"])
+            s = get_col(["skills", "skill", "skill_set"])
+            g = get_col(["github", "github_url"])
+            l = get_col(["linkedin", "linkedin_url"])
+            p = get_col(["projects", "project"])
+            c = get_col(["certifications", "certification"])
+
+            if not all([n, d, q, s]):
+                st.sidebar.error(f"Students CSV needs: username/name, district, degree/qualification, skills. Found: {list(df.columns)}")
+                return
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            for _, r in df.iterrows():
+                skills = to_skill_list(r[s])
+                cur.execute("""
+                    INSERT INTO students
+                    (username, degree, district, github, linkedin, skills, trust_score, projects, certifications)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (username)
+                    DO UPDATE SET
+                        degree = EXCLUDED.degree,
+                        district = EXCLUDED.district,
+                        github = EXCLUDED.github,
+                        linkedin = EXCLUDED.linkedin,
+                        skills = EXCLUDED.skills,
+                        projects = EXCLUDED.projects,
+                        certifications = EXCLUDED.certifications
+                """, (
+                    str(r[n]), str(r[q]), str(r[d]),
+                    str(r[g]) if g and not pd.isna(r[g]) else "",
+                    str(r[l]) if l and not pd.isna(r[l]) else "",
+                    json.dumps(skills), 0,
+                    str(r[p]) if p and not pd.isna(r[p]) else "",
+                    str(r[c]) if c and not pd.isna(r[c]) else ""
+                ))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            st.sidebar.success(f"{len(df)} students added from CSV.")
+
+        elif kind == "Jobs":
+            t = get_col(["title", "job_title", "job_name"])
+            co = get_col(["company", "company_name", "employer"])
+            sk = get_col(["skills", "required_skills", "skills_required", "skill"])
+            q = get_col(["degree", "qualification", "education"])
+            di = get_col(["district", "location", "city"])
+            se = get_col(["sector", "industry", "field"])
+            de = get_col(["description", "job_description", "details"])
+
+            if not all([t, co, sk, q, di]):
+                st.sidebar.error(f"Jobs CSV needs: title, company, skills, degree/qualification, district. Found: {list(df.columns)}")
+                return
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            for _, r in df.iterrows():
+                cur.execute("""
+                    INSERT INTO jobs (company, title, description, skills, degree, district, sector)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    str(r[co]), str(r[t]),
+                    str(r[de]) if de and not pd.isna(r[de]) else "",
+                    json.dumps(to_skill_list(r[sk])),
+                    str(r[q]), str(r[di]),
+                    str(r[se]) if se and not pd.isna(r[se]) else "Other"
+                ))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            st.sidebar.success(f"{len(df)} jobs added from CSV.")
+
+        else:
+            i = get_col(["institute", "institute_name", "training_institute"])
+            p = get_col(["program_name", "program", "course_name", "course"])
+            s = get_col(["skills_taught", "skills", "skill", "course_skills"])
+            di = get_col(["district", "location", "city"])
+            du = get_col(["duration", "duration_months", "length"])
+
+            if not all([i, p, s]):
+                st.sidebar.error(f"Training CSV needs: institute, program_name, skills_taught/skills. Found: {list(df.columns)}")
+                return
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            for _, r in df.iterrows():
+                cur.execute("""
+                    INSERT INTO training_programs (institute, program_name, skills, district, duration)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    str(r[i]), str(r[p]),
+                    json.dumps(to_skill_list(r[s])),
+                    str(r[di]) if di and not pd.isna(r[di]) else "",
+                    str(r[du]) if du and not pd.isna(r[du]) else "3 months"
+                ))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            st.sidebar.success(f"{len(df)} training programs added from CSV.")
+
 # ---------------- Session ----------------
 
 if "logged_in" not in st.session_state:
@@ -751,6 +883,29 @@ if "role" not in st.session_state:
 
 if "username" not in st.session_state:
     st.session_state.username = ""
+
+# ---------------- One-click role switcher ----------------
+
+def role_switcher():
+    st.sidebar.subheader("🔄 Switch Role (Demo)")
+
+    demo_roles = {
+        "Student (student1)": ("Student", "student1"),
+        "Company (company1)": ("Company", "company1"),
+        "Training Institute (institute1)": ("Training Institute", "institute1"),
+        "District Admin (admin)": ("District Admin", "admin"),
+        "State Admin (admin)": ("State Admin", "admin"),
+        "Job Fair (fair1)": ("Job Fair", "fair1")
+    }
+
+    choice = st.sidebar.selectbox("Jump to role", list(demo_roles.keys()))
+
+    if st.sidebar.button("Switch now", use_container_width=True):
+        role, username = demo_roles[choice]
+        st.session_state.logged_in = True
+        st.session_state.role = role
+        st.session_state.username = username
+        st.rerun()
 
 # ---------------- Login ----------------
 
@@ -1939,6 +2094,9 @@ def copilot_page():
 # ---------------- Main ----------------
 
 def main():
+    role_switcher()
+    upload_csv()
+
     if not st.session_state.logged_in:
         login_page()
         return
