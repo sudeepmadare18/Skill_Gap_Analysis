@@ -884,29 +884,6 @@ if "role" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = ""
 
-# ---------------- One-click role switcher ----------------
-
-def role_switcher():
-    st.sidebar.subheader("🔄 Switch Role (Demo)")
-
-    demo_roles = {
-        "Student (student1)": ("Student", "student1"),
-        "Company (company1)": ("Company", "company1"),
-        "Training Institute (institute1)": ("Training Institute", "institute1"),
-        "District Admin (admin)": ("District Admin", "admin"),
-        "State Admin (admin)": ("State Admin", "admin"),
-        "Job Fair (fair1)": ("Job Fair", "fair1")
-    }
-
-    choice = st.sidebar.selectbox("Jump to role", list(demo_roles.keys()))
-
-    if st.sidebar.button("Switch now", use_container_width=True):
-        role, username = demo_roles[choice]
-        st.session_state.logged_in = True
-        st.session_state.role = role
-        st.session_state.username = username
-        st.rerun()
-
 # ---------------- Login ----------------
 
 def login_page():
@@ -2094,7 +2071,6 @@ def copilot_page():
 # ---------------- Main ----------------
 
 def main():
-    role_switcher()
     upload_csv()
 
     if not st.session_state.logged_in:
