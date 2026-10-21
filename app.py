@@ -2065,6 +2065,23 @@ def copilot_page():
 # ---------------- Main ----------------
 
 def main():
+        # ---- One-click demo role switcher ----
+    with st.sidebar:
+        st.markdown("### 🔄 Switch Role (Demo)")
+        demo_roles = {
+            "Student (student1)": ("Student", "student1", "student123"),
+            "Company (company1)": ("Company", "company1", "company123"),
+            "Training Institute (institute1)": ("Training Institute", "institute1", "institute123"),
+            "District Admin (admin)": ("District Admin", "admin", "admin123"),
+            "State Admin (admin)": ("State Admin", "admin", "admin123"),
+        }
+        choice = st.selectbox("Jump to role", list(demo_roles.keys()), key="demo_switch")
+        if st.button("Switch now", use_container_width=True):
+            role, user, pwd = demo_roles[choice]
+            st.session_state["role"] = role
+            st.session_state["user"] = user
+            st.session_state["logged_in"] = True
+            st.rerun()
     if not st.session_state.logged_in:
         login_page()
         return
