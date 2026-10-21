@@ -15,7 +15,7 @@ st.set_page_config(
 st.title("🎯 Skill Gap and Emerging Skills Intelligence")
 st.caption("Student CV, company jobs, skill-gap matching, job fair, and district dashboard.")
 
-# ---------------- Database connection ----------------
+# ---------------- Database ----------------
 
 def get_connection():
     return psycopg2.connect(
@@ -185,7 +185,7 @@ def match_skills(student_skills, job_skills):
 
     return matched, missing, score
 
-# ---------------- Database functions ----------------
+# ---------------- DB functions ----------------
 
 def save_student(username, degree, district, github, linkedin, skills):
     conn = get_connection()
@@ -412,6 +412,28 @@ def login_page():
 
 def student_page():
     st.title("👤 Student Dashboard")
+
+    saved_students = get_students()
+    saved_profile = None
+
+    for student in saved_students:
+        if student["Name"] == st.session_state.username:
+            saved_profile = student
+            break
+
+    if saved_profile:
+        st.subheader("My saved profile")
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("Degree", saved_profile["Degree"])
+        col2.metric("District", saved_profile["District"])
+        col3.metric("Skills", len(saved_profile["Skills"]))
+
+        st.write("**Saved skills:**")
+        st.write(", ".join(saved_profile["Skills"]))
+
+        st.divider()
 
     st.subheader("My profile")
 
