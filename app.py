@@ -43,6 +43,11 @@ def init_db():
     """)
 
     cur.execute("""
+        ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 0
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id SERIAL PRIMARY KEY,
             company TEXT,
@@ -1161,6 +1166,90 @@ def training_page():
         else:
             st.info("No student interest yet.")
 
+# ---------------- Student training ----------------
+
+def student_training_page():
+    st.title("🎓 Training Programs")
+
+    programs = get_training_programs()
+
+    if not programs:
+        st.info("No training programs available.")
+        st.stop()
+
+    student = next(
+        (s for s in get_students() if s["Name"] == st.session_state.username),
+        None
+    )
+
+    student_skills = set(student["Skills"]) if student else set()
+
+    for program in programs:
+        matched = sorted(student_skills & set(program["Skills"]))
+        missing = sorted(set(program["Skills"]) - student_skills)
+
+        with st.expander(
+            f"{program['Program']} — {program['Institute']} | {program['District']}"
+        ):
+            st.write("**Skills covered:**")
+            st.write(", ".join(program["Skills"]))
+
+            st.write("**Your matching skills:**")
+            st.write(", ".join(matched) if matched else "None")
+
+            st.write("**Skills you can learn:**")
+            st.write(", ".join(missing) if missing else "None")
+
+            st.write(f"**Duration:** {program['Duration']}")
+
+            if st.button(
+                "I am interested",
+                key=f"interest_{program['ID']}"
+            ):
+                added = save_training_interest(
+                    program["Program"],
+                    program["Institute"],
+                    st.session_state.username,
+                    student["District"] if student else ""
+                )
+
+                if added:
+                    st.success("Interest recorded.")
+                else:
+                    st.warning("You already expressed interest.")
+
+# ---------------- Student fair apply ----------------
+
+def student_fair_apply_page():
+    st.title("🎪 Job Fair Applications")
+
+    fairs = get_job_fairs()
+
+    if not fairs:
+        st.warning("No job fairs available.")
+        st.stop()
+
+    for fair in fairs:
+        with st.expander(f"{fair['Name']} — {fair['District']} ({fair['Date']})"):
+            st.write("**Open to all registered students**")
+
+            if st.button("Apply", key=f"fair_apply_{fair['Name']}"):
+                student = next(
+                    (s for s in get_students() if s["Name"] == st.session_state.username),
+                    None
+                )
+
+                skills = ", ".join(student["Skills"]) if student else "No skills added"
+
+                save_fair_registration(
+                    fair["Name"],
+                    st.session_state.username,
+                    skills,
+                    "Student"
+                )
+
+                st.success("Job-fair application submitted.")
+
 # ---------------- Notifications ----------------
 
 def notifications_page():
@@ -1434,88 +1523,6 @@ def main():
 
     else:
         admin_page()
-
-
-def student_fair_apply_page():
-    st.title("🎪 Job Fair Applications")
-
-    fairs = get_job_fairs()
-
-    if not fairs:
-        st.warning("No job fairs available.")
-        st.stop()
-
-    for fair in fairs:
-        with st.expander(f"{fair['Name']} — {fair['District']} ({fair['Date']})"):
-            st.write("**Required / preferred skills:** Open to all registered students")
-
-            if st.button("Apply", key=f"fair_apply_{fair['Name']}"):
-                student = next(
-                    (s for s in get_students() if s["Name"] == st.session_state.username),
-                    None
-                )
-
-                skills = ", ".join(student["Skills"]) if student else "No skills added"
-
-                save_fair_registration(
-                    fair["Name"],
-                    st.session_state.username,
-                    skills,
-                    "Student"
-                )
-
-                st.success("Job-fair application submitted.")
-
-
-def student_training_page():
-    st.title("🎓 Training Programs")
-
-    programs = get_training_programs()
-
-    if not programs:
-        st.info("No training programs available.")
-        st.stop()
-
-    student = next(
-        (s for s in get_students() if s["Name"] == st.session_state.username),
-        None
-    )
-
-    student_skills = set(student["Skills"]) if student else set()
-
-    for program in programs:
-        matched = sorted(student_skills & set(program["Skills"]))
-        missing = sorted(set(program["Skills"]) - student_skills)
-
-        with st.expander(
-            f"{program['Program']} — {program['Institute']} | {program['District']}"
-        ):
-            st.write("**Skills covered:**")
-            st.write(", ".join(program["Skills"]))
-
-            st.write("**Your matching skills:**")
-            st.write(", ".join(matched) if matched else "None")
-
-            st.write("**Skills you can learn:**")
-            st.write(", ".join(missing) if missing else "None")
-
-            st.write(f"**Duration:** {program['Duration']}")
-
-            if st.button(
-                "I am interested",
-                key=f"interest_{program['ID']}"
-            ):
-                added = save_training_interest(
-                    program["Program"],
-                    program["Institute"],
-                    st.session_state.username,
-                    student["District"] if student else ""
-                )
-
-                if added:
-                    st.success("Interest recorded.")
-                else:
-                    st.warning("You already expressed interest.")
 
 
 main()
