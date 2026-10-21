@@ -430,16 +430,15 @@ def job_fair_page():
         st.subheader(f"Job fairs: {len(st.session_state.job_fairs)}")
 
         if st.session_state.job_fairs:
-            rows = []
+            for i, fair in enumerate(st.session_state.job_fairs):
+                col1, col2, col3 = st.columns([3, 2, 1])
 
-            for fair in st.session_state.job_fairs:
-                rows.append({
-                    "Fair": fair["Name"],
-                    "District": fair["District"],
-                    "Date": fair["Date"]
-                })
+                col1.write(f"**{fair['Name']}**")
+                col2.write(f"{fair['District']} — {fair['Date']}")
 
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                if col3.button("Delete", key=f"delete_fair_{i}"):
+                    st.session_state.job_fairs.pop(i)
+                    st.rerun()
 
     with tab2:
         if not st.session_state.job_fairs:
@@ -478,10 +477,26 @@ def job_fair_page():
         st.subheader("Registered students")
 
         if st.session_state.fair_registrations:
+            for i, registration in enumerate(st.session_state.fair_registrations):
+                col1, col2, col3 = st.columns([3, 3, 1])
+
+                col1.write(f"**{registration['Student']}**")
+                col2.write(registration["Skills"])
+
+                if col3.button("Delete", key=f"delete_registration_{i}"):
+                    st.session_state.fair_registrations.pop(i)
+                    st.rerun()
+
+            st.subheader("Registration table")
             st.dataframe(
                 pd.DataFrame(st.session_state.fair_registrations),
                 use_container_width=True
             )
+
+            if st.button("Clear all registrations"):
+                st.session_state.fair_registrations = []
+                st.rerun()
+
         else:
             st.info("No registrations yet.")
 
