@@ -464,11 +464,23 @@ def main():
     st.sidebar.write(f"**Role:** {st.session_state.role}")
     st.sidebar.write(f"**User:** {st.session_state.username}")
 
+    page = st.sidebar.radio(
+        "Go to",
+        [
+            "Home",
+            "🎯 Job Matching and Skill Gap"
+        ]
+    )
+
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.role = None
         st.session_state.username = ""
         st.rerun()
+
+    if page == "🎯 Job Matching and Skill Gap":
+        matching_dashboard()
+        return
 
     if st.session_state.role == "Student":
         student_dashboard()
@@ -483,8 +495,5 @@ def main():
         "Job Fair"
     ]:
         admin_dashboard()
-
-    elif st.session_state.role == "Matching":
-        matching_dashboard()
 
 main()
