@@ -6,7 +6,7 @@ from datetime import date
 
 st.set_page_config(page_title="Skill Bridge Karnataka", page_icon="🌉", layout="wide")
 
-# ---------- DB (auto-detects your secret key) ----------
+# ---------- DB ----------
 def get_conn():
     secrets = st.secrets
     url = None
@@ -23,7 +23,7 @@ def get_conn():
                 url = v
                 break
     if not url:
-        st.error("Database URL not found in Secrets. Check Streamlit Cloud → Manage app → Secrets.")
+        st.error("Database URL not found in Secrets.")
         st.stop()
     return psycopg2.connect(url)
 
@@ -190,22 +190,56 @@ def page_admin():
         if fairs:
             st.dataframe(pd.DataFrame(fairs, columns=["ID","Name","Date","District"]), use_container_width=True)
 
-# ---------- CSV upload ----------
+# ---------- Flexible CSV upload ----------
 def upload_csv():
     st.sidebar.subheader("📤 Bulk upload CSV")
     kind = st.sidebar.selectbox("Data type", ["Students","Jobs","Training programs"])
     file = st.sidebar.file_uploader("Upload CSV", type="csv")
     if file and st.sidebar.button("Upload"):
         df = pd.read_csv(file)
+        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+        def col(df, options):
+            for o in options:
+                if o in df.columns:
+                    return o
+            return None
+
         if kind == "Students":
-            rows = [(r["name"], r["district"], r["qualification"], r["skills"]) for _, r in df.iterrows()]
+            n = col(df, ["name","student_name","student","full_name"])
+            d = col(df, ["district","location","city"])
+            q = col(df, ["qualification","education","degree"])
+            s = col(df, ["skills","skill","skills_taught","skill_set"])
+            if not all([n, d, q, s]):
+                st.sidebar.error(f"CSV must have: name, district, qualification, skills. Found: {list(df.columns)}")
+                return
+            rows = [(r[n], r[d], r[q], r[s]) for _, r in df.iterrows()]
             insert_many("INSERT INTO students (name, district, qualification, skills) VALUES %s", rows)
+
         elif kind == "Jobs":
-            rows = [(r["title"], r.get("description",""), r["company"], r["skills"], r["qualification"], r["district"], r["sector"]) for _, r in df.iterrows()]
+            t = col(df, ["title","job_title","job_name"])
+            c = col(df, ["company","company_name","employer"])
+            sk = col(df, ["skills","required_skills","skills_required","skill"])
+            q = col(df, ["qualification","education","degree"])
+            di = col(df, ["district","location","city"])
+            se = col(df, ["sector","industry","field"])
+            de = col(df, ["description","job_description","details"])
+            if not all([t, c, sk, q, di, se]):
+                st.sidebar.error(f"CSV must have: title, company, skills, qualification, district, sector. Found: {list(df.columns)}")
+                return
+            rows = [(r[t], r[de] if de else "", r[c], r[sk], r[q], r[di], r[se]) for _, r in df.iterrows()]
             insert_many("INSERT INTO jobs (title, description, company, skills, qualification, district, sector) VALUES %s", rows)
+
         else:
-            rows = [(r["institute"], r["program_name"], r["skills_taught"]) for _, r in df.iterrows()]
+            i = col(df, ["institute","institute_name","training_institute"])
+            p = col(df, ["program_name","program","course_name","course"])
+            s = col(df, ["skills_taught","skills","skill","course_skills"])
+            if not all([i, p, s]):
+                st.sidebar.error(f"CSV must have: institute, program_name, skills_taught. Found: {list(df.columns)}")
+                return
+            rows = [(r[i], r[p], r[s]) for _, r in df.iterrows()]
             insert_many("INSERT INTO training_programs (institute, program_name, skills_taught) VALUES %s", rows)
+
         st.sidebar.success(f"{len(df)} rows added!")
 
 # ---------- Main ----------
